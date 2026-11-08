@@ -92,3 +92,96 @@ DB 데이터는 Docker 볼륨에 유지됩니다.
 - `ddl-auto=validate`는 테이블을 생성하지 않습니다.
   Entity에 대응하는 테이블은 Flyway 마이그레이션으로 관리합니다.
 - 비밀번호와 API 키는 Git에 커밋하지 않습니다.
+
+## 공통 응답 및 예외 처리
+
+### 성공 응답
+
+컨트롤러에서 `ApiResponse.of(data)`로 데이터를 감싸 반환합니다.
+HTTP 상태는 컨트롤러에서 지정합니다.
+
+```java
+return ResponseEntity.ok(ApiResponse.of(userResponse));
+```
+
+응답 예시:
+
+```json
+{
+  "data": {
+    "id": 1,
+    "name": "홍길동"
+  }
+}
+```
+
+`204 No Content`를 반환할 때는 응답 본문을 포함하지 않습니다.
+
+### 비즈니스 예외
+
+서비스에서 비즈니스 오류가 발생하면 `BusinessException`을 사용합니다.
+
+```java
+throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+```
+
+`GlobalExceptionHandler`가 에러 코드에 정의된 HTTP 상태와 메시지를 반환합니다.
+
+```json
+{
+  "code": "RESOURCE_NOT_FOUND",
+  "message": "요청한 대상을 찾을 수 없습니다.",
+  "errors": []
+}
+```
+
+### 입력값 검증
+
+요청 DTO에 검증 어노테이션을 선언하고,
+컨트롤러의 요청 본문에 `@Valid`를 적용합니다.
+
+```java
+public record CreateUserRequest(
+        @NotBlank(message = "이름은 필수입니다.")
+        String name
+) {
+}
+```
+
+```java
+@PostMapping
+public ResponseEntity<ApiResponse<UserResponse>> create(
+        @Valid @RequestBody CreateUserRequest request
+) {
+    // 생성 처리
+}
+```
+
+검증 실패 시 HTTP `400`과 필드별 오류를 반환합니다.
+
+```json
+{
+  "code": "INVALID_INPUT",
+  "message": "입력값을 확인해주세요.",
+  "errors": [
+    {
+      "field": "name",
+      "message": "이름은 필수입니다."
+    }
+  ]
+}
+```
+
+### 에러 처리 규칙
+
+| 상황 | HTTP 상태 | 에러 코드 |
+|---|---|---|
+| 요청 DTO 필드 검증 실패 | 400 | INVALID_INPUT |
+| 요청한 대상 없음 | 404 | RESOURCE_NOT_FOUND |
+| 현재 상태와 충돌 | 409 | CONFLICT |
+| 잘못된 JSON 등 Spring MVC 기본 오류 | 오류에 맞는 상태 | HTTP_{상태 코드} |
+| 예상하지 못한 서버 오류 | 500 | INTERNAL_SERVER_ERROR |
+
+- 비즈니스 오류는 `ErrorCode`에 정의하고 `BusinessException`으로 전달합니다.
+- 예상하지 못한 예외의 상세 정보는 서버 로그에 기록하고 응답에 노출하지 않습니다.
+- 컨트롤러마다 동일한 예외 처리를 반복하지 않고 전역 예외 처리기를 사용합니다.

@@ -48,6 +48,7 @@ class AuthServiceLoginTest {
     void setUp() {
         authService = new AuthService(
                 userRepository, refreshTokenRepository, passwordEncoder, tokenProvider,
+                new LoginPolicyProperties(5, Duration.ofMinutes(30)),
                 Clock.fixed(NOW, ZoneOffset.UTC));
         user = User.create("user@afterme.com", "hashed", "홍길동");
         ReflectionTestUtils.setField(user, "id", 1L);
@@ -80,13 +81,40 @@ class AuthServiceLoginTest {
     }
 
     @Test
-    void 비밀번호가_틀리면_INVALID_CREDENTIALS() {
+    void 비밀번호를_5회_틀리면_계정이_잠긴다() {
         given(userRepository.findByEmail("user@afterme.com")).willReturn(Optional.of(user));
         given(passwordEncoder.matches("wrong", "hashed")).willReturn(false);
+        LoginRequest wrong = new LoginRequest("user@afterme.com", "wrong");
 
-        assertError(() -> authService.login(new LoginRequest("user@afterme.com", "wrong")),
-                ErrorCode.INVALID_CREDENTIALS);
-        verify(refreshTokenRepository, never()).save(any());
+        for (int i = 0; i < 4; i++) {
+            assertError(() -> authService.login(wrong), ErrorCode.INVALID_CREDENTIALS);
+        }
+        assertError(() -> authService.login(wrong), ErrorCode.ACCOUNT_LOCKED);
+
+        assertThat(user.getLockedUntil()).isEqualTo(NOW.plus(Duration.ofMinutes(30)));
+    }
+
+    @Test
+    void 잠긴_계정은_비밀번호가_맞아도_로그인할_수_없다() {
+        ReflectionTestUtils.setField(user, "lockedUntil", NOW.plusSeconds(60));
+        given(userRepository.findByEmail("user@afterme.com")).willReturn(Optional.of(user));
+
+        assertError(() -> authService.login(new LoginRequest("user@afterme.com", "password1")),
+                ErrorCode.ACCOUNT_LOCKED);
+        verify(passwordEncoder, never()).matches(any(), any());
+    }
+
+    @Test
+    void 로그인_성공시_실패_횟수가_초기화된다() {
+        ReflectionTestUtils.setField(user, "failedLoginCount", 3);
+        given(userRepository.findByEmail("user@afterme.com")).willReturn(Optional.of(user));
+        given(passwordEncoder.matches("password1", "hashed")).willReturn(true);
+        given(tokenProvider.createRefreshToken()).willReturn("refresh");
+
+        authService.login(new LoginRequest("user@afterme.com", "password1"));
+
+        assertThat(user.getFailedLoginCount()).isZero();
+        assertThat(user.getLockedUntil()).isNull();
     }
 
     private static void assertError(Runnable action, ErrorCode expected) {

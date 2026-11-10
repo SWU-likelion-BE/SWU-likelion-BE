@@ -35,6 +35,16 @@ public enum ErrorCode {
             "DUPLICATE_EMAIL",
             "이미 가입된 이메일입니다."
     ),
+    INVALID_CREDENTIALS(
+            HttpStatus.UNAUTHORIZED,
+            "INVALID_CREDENTIALS",
+            "이메일 또는 비밀번호가 올바르지 않습니다."
+    ),
+    INVALID_ACCESS_TOKEN(
+            HttpStatus.UNAUTHORIZED,
+            "INVALID_ACCESS_TOKEN",
+            "액세스 토큰이 없거나 유효하지 않습니다."
+    ),
 
     INTERNAL_SERVER_ERROR(
             HttpStatus.INTERNAL_SERVER_ERROR,

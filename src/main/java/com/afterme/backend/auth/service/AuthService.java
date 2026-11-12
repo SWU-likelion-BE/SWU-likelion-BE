@@ -29,6 +29,7 @@ public class AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final TokenProvider tokenProvider;
+    private final LoginPolicyProperties loginPolicy;
     private final Clock clock;
 
     @Transactional
@@ -53,16 +54,27 @@ public class AuthService {
         }
     }
 
-    @Transactional
+    /**
+     * 실패 횟수 기록은 예외를 던져도 커밋되어야 하므로 BusinessException에서는 롤백하지 않는다.
+     */
+    @Transactional(noRollbackFor = BusinessException.class)
     public TokenResponse login(LoginRequest request) {
         Instant now = clock.instant();
         User user = userRepository.findByEmail(normalizeEmail(request.email()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS));
 
-        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
+        if (user.isLocked(now)) {
+            throw new BusinessException(ErrorCode.ACCOUNT_LOCKED);
         }
 
+        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            boolean locked = user.recordLoginFailure(
+                    loginPolicy.maxFailedAttempts(), loginPolicy.lockDuration(), now);
+            throw new BusinessException(
+                    locked ? ErrorCode.ACCOUNT_LOCKED : ErrorCode.INVALID_CREDENTIALS);
+        }
+
+        user.recordLoginSuccess();
         return issueTokens(user.getId(), now);
     }
 

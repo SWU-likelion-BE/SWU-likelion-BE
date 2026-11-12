@@ -45,6 +45,11 @@ public enum ErrorCode {
             "INVALID_ACCESS_TOKEN",
             "액세스 토큰이 없거나 유효하지 않습니다."
     ),
+    ACCOUNT_LOCKED(
+            HttpStatus.LOCKED,
+            "ACCOUNT_LOCKED",
+            "로그인 실패 횟수를 초과하여 계정이 잠겼습니다. 잠시 후 다시 시도해주세요."
+    ),
 
     INTERNAL_SERVER_ERROR(
             HttpStatus.INTERNAL_SERVER_ERROR,

@@ -57,6 +57,10 @@ public class User {
         return new User(email, passwordHash, name);
     }
 
+    public void updateName(String name) {
+        this.name = name;
+    }
+
     public boolean isLocked(Instant now) {
         return lockedUntil != null && now.isBefore(lockedUntil);
     }

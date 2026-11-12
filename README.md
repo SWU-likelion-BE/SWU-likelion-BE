@@ -27,6 +27,14 @@ Copy-Item .env.example .env
 DB_NAME=afterme
 DB_USERNAME=afterme
 DB_PASSWORD=여기에_로컬_DB_비밀번호_입력
+JWT_SECRET=32자_이상의_임의_문자열
+```
+
+`JWT_SECRET`은 액세스 토큰 서명 키입니다. 32바이트 미만이면 애플리케이션이 시작되지 않습니다.
+PowerShell에서 임의 값 생성:
+
+```powershell
+[Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Maximum 256 }))
 ```
 
 `.env`는 Git에서 제외됩니다.
@@ -57,13 +65,14 @@ postgres 서비스의 STATUS가 `Up`이면 실행된 상태입니다.
 상단 실행 구성 → 구성 편집 → AftermeBackendApplication을 선택합니다.
 
 - 활성화된 프로파일: `local`
-- 환경 변수: 아래 3개를 각각 등록
+- 환경 변수: 아래 4개를 각각 등록
 
 | 이름 | 값 |
 | --- | --- |
 | DB_NAME | `.env`의 DB_NAME 값 |
 | DB_USERNAME | `.env`의 DB_USERNAME 값 |
 | DB_PASSWORD | `.env`의 DB_PASSWORD 값 |
+| JWT_SECRET | `.env`의 JWT_SECRET 값 |
 
 환경변수 이름 앞뒤에 공백을 넣지 않습니다.
 Spring Boot는 기본적으로 `.env`를 자동으로 읽지 않으므로
@@ -185,3 +194,36 @@ public ResponseEntity<ApiResponse<UserResponse>> create(
 - 비즈니스 오류는 `ErrorCode`에 정의하고 `BusinessException`으로 전달합니다.
 - 예상하지 못한 예외의 상세 정보는 서버 로그에 기록하고 응답에 노출하지 않습니다.
 - 컨트롤러마다 동일한 예외 처리를 반복하지 않고 전역 예외 처리기를 사용합니다.
+## 인증 / 회원 API
+
+| 기능 | 메서드 · 경로 | 인증 | 성공 응답 |
+|---|---|---|---|
+| 회원가입 | `POST /api/auth/signup` | X | 201 `{ data: { id, email, name } }` |
+| 로그인 | `POST /api/auth/login` | X | 200 `{ data: TokenResponse }` |
+| 내 프로필 조회 | `GET /api/users/me` | O | 200 `{ data: { id, email, name, createdAt } }` |
+| 내 프로필 수정 (이름) | `PATCH /api/users/me` | O | 200 `{ data: { id, email, name, createdAt } }` |
+
+- `TokenResponse`: `{ accessToken, refreshToken, tokenType: "Bearer", expiresIn }` (`expiresIn`은 초 단위)
+- 인증이 필요한 API는 `Authorization: Bearer {accessToken}` 헤더를 보냅니다.
+
+### 토큰 정책
+
+| 항목 | 값 | 설정 키 |
+|---|---|---|
+| 액세스 토큰 유효기간 | 30분 | `jwt.access-token-ttl` |
+| 리프레시 토큰 유효기간 | 14일 | `jwt.refresh-token-ttl` |
+| 로그인 실패 잠금 | 5회 실패 시 | `auth.login.max-failed-attempts` |
+| 잠금 시간 | 30분 (회의 후 확정) | `auth.login.lock-duration` |
+
+리프레시 토큰은 DB에 원문 대신 SHA-256 해시로 저장합니다.
+
+### 인증 오류 코드
+
+| 상황 | HTTP 상태 | 에러 코드 |
+|---|---|---|
+| 토큰 없이 인증 API 호출 | 401 | UNAUTHORIZED |
+| 액세스 토큰 만료·위조 | 401 | INVALID_ACCESS_TOKEN |
+| 이메일 또는 비밀번호 불일치 | 401 | INVALID_CREDENTIALS |
+| 로그인 실패 횟수 초과 | 423 | ACCOUNT_LOCKED |
+| 중복 이메일 가입 | 409 | DUPLICATE_EMAIL |
+| 회원 없음 | 404 | USER_NOT_FOUND |

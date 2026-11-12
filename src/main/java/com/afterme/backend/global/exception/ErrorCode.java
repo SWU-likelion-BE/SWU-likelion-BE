@@ -8,6 +8,16 @@ public enum ErrorCode {
             "INVALID_INPUT",
             "입력값을 확인해주세요."
     ),
+    UNAUTHORIZED(
+            HttpStatus.UNAUTHORIZED,
+            "UNAUTHORIZED",
+            "로그인이 필요합니다."
+    ),
+    FORBIDDEN(
+            HttpStatus.FORBIDDEN,
+            "FORBIDDEN",
+            "접근 권한이 없습니다."
+    ),
     RESOURCE_NOT_FOUND(
             HttpStatus.NOT_FOUND,
             "RESOURCE_NOT_FOUND",
@@ -18,6 +28,14 @@ public enum ErrorCode {
             "CONFLICT",
             "현재 상태에서는 요청을 처리할 수 없습니다."
     ),
+
+    // 인증
+    DUPLICATE_EMAIL(
+            HttpStatus.CONFLICT,
+            "DUPLICATE_EMAIL",
+            "이미 가입된 이메일입니다."
+    ),
+
     INTERNAL_SERVER_ERROR(
             HttpStatus.INTERNAL_SERVER_ERROR,
             "INTERNAL_SERVER_ERROR",

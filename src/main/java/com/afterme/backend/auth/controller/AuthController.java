@@ -1,7 +1,9 @@
 package com.afterme.backend.auth.controller;
 
+import com.afterme.backend.auth.dto.LoginRequest;
 import com.afterme.backend.auth.dto.SignupRequest;
 import com.afterme.backend.auth.dto.SignupResponse;
+import com.afterme.backend.auth.dto.TokenResponse;
 import com.afterme.backend.auth.service.AuthService;
 import com.afterme.backend.global.response.ApiResponse;
 import jakarta.validation.Valid;
@@ -27,5 +29,12 @@ public class AuthController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(ApiResponse.of(authService.signup(request)));
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<ApiResponse<TokenResponse>> login(
+            @Valid @RequestBody LoginRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.of(authService.login(request)));
     }
 }

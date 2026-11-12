@@ -4,6 +4,7 @@ import com.afterme.backend.global.exception.ErrorCode;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -15,6 +16,10 @@ import org.springframework.security.web.SecurityFilterChain;
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
+
+    private static final String[] PUBLIC_AUTH_APIS = {
+            "/api/auth/signup", "/api/auth/login"
+    };
 
     private static final String[] PUBLIC_DOCS = {
             "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**"
@@ -33,10 +38,17 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.POST, "/api/auth/signup").permitAll()
+                        .requestMatchers(HttpMethod.POST, PUBLIC_AUTH_APIS).permitAll()
                         .requestMatchers(PUBLIC_DOCS).permitAll()
                         .requestMatchers("/actuator/health", "/error").permitAll()
                         .anyRequest().authenticated())
+                // Authorization: Bearer {accessToken} 검증 (JwtConfig의 JwtDecoder 사용)
+                .oauth2ResourceServer(resourceServer -> resourceServer
+                        .jwt(Customizer.withDefaults())
+                        .authenticationEntryPoint((request, response, e) ->
+                                errorResponder.write(response, ErrorCode.INVALID_ACCESS_TOKEN))
+                        .accessDeniedHandler((request, response, e) ->
+                                errorResponder.write(response, ErrorCode.FORBIDDEN)))
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint((request, response, e) ->
                                 errorResponder.write(response, ErrorCode.UNAUTHORIZED))

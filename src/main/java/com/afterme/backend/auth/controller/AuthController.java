@@ -1,11 +1,9 @@
 package com.afterme.backend.auth.controller;
 
-import com.afterme.backend.auth.dto.LoginRequest;
-import com.afterme.backend.auth.dto.SignupRequest;
-import com.afterme.backend.auth.dto.SignupResponse;
-import com.afterme.backend.auth.dto.TokenResponse;
+import com.afterme.backend.auth.dto.*;
 import com.afterme.backend.auth.service.AuthService;
 import com.afterme.backend.global.response.ApiResponse;
+import com.afterme.backend.global.security.LoginUserId;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -36,5 +34,22 @@ public class AuthController {
             @Valid @RequestBody LoginRequest request
     ) {
         return ResponseEntity.ok(ApiResponse.of(authService.login(request)));
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<ApiResponse<TokenResponse>> refresh(
+            @Valid @RequestBody RefreshTokenRequest request
+    ){
+        TokenResponse tokens = authService.refresh(request.refreshToken());
+        return ResponseEntity.ok(ApiResponse.of(tokens));
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(
+            @LoginUserId Long userId,
+            @Valid @RequestBody RefreshTokenRequest request
+    ){
+        authService.logout(userId, request.refreshToken());
+        return ResponseEntity.noContent().build();
     }
 }

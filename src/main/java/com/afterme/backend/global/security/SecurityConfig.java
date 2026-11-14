@@ -18,7 +18,7 @@ import org.springframework.security.web.SecurityFilterChain;
 public class SecurityConfig {
 
     private static final String[] PUBLIC_AUTH_APIS = {
-            "/api/auth/signup", "/api/auth/login"
+            "/api/auth/signup", "/api/auth/login", "/api/auth/refresh"
     };
 
     private static final String[] PUBLIC_DOCS = {

@@ -95,4 +95,34 @@ public class AuthService {
     static String normalizeEmail(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
     }
+
+    @Transactional
+    public TokenResponse refresh(String rawRefreshToken){
+        RefreshToken token = findRefreshTokenForUpdate(rawRefreshToken);
+        Instant now = clock.instant();
+
+        if(token.isExpired(now)){
+            throw new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN);
+        }
+
+        refreshTokenRepository.delete(token);
+        return issueTokens(token.getUserId(), now);
+    }
+
+    @Transactional
+    public void logout(Long userId, String rawRefreshToken) {
+        RefreshToken token = findRefreshTokenForUpdate(rawRefreshToken);
+
+        if (!userId.equals(token.getUserId())) {
+            throw new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN);
+        }
+
+        refreshTokenRepository.delete(token);
+    }
+
+    private RefreshToken findRefreshTokenForUpdate(String rawRefreshToken){
+        String tokenHash = tokenProvider.hashRefreshToken(rawRefreshToken);
+        return refreshTokenRepository.findByTokenHashForUpdate(tokenHash)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
+    }
 }

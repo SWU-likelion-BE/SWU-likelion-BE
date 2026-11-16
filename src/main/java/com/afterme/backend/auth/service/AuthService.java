@@ -17,6 +17,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.sql.BatchUpdateException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Locale;
@@ -63,6 +64,9 @@ public class AuthService {
         User user = userRepository.findByEmail(normalizeEmail(request.email()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS));
 
+        if (user.isWithdrawn()){
+            throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
+        }
         if (user.isLocked(now)) {
             throw new BusinessException(ErrorCode.ACCOUNT_LOCKED);
         }
@@ -100,8 +104,14 @@ public class AuthService {
     public TokenResponse refresh(String rawRefreshToken){
         RefreshToken token = findRefreshTokenForUpdate(rawRefreshToken);
         Instant now = clock.instant();
+        User user = userRepository.findById(token.getUserId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
 
         if(token.isExpired(now)){
+            throw new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN);
+        }
+
+        if(user.isWithdrawn()){
             throw new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN);
         }
 

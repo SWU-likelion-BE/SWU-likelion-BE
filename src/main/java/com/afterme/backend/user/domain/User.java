@@ -46,6 +46,9 @@ public class User {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "withdrawn_at")
+    private Instant withdrawnAt;
+
     private User(String email, String passwordHash, String name) {
         this.email = email;
         this.passwordHash = passwordHash;
@@ -99,5 +102,15 @@ public class User {
     @PreUpdate
     void onUpdate() {
         this.updatedAt = Instant.now();
+    }
+
+    public void withdraw(Instant now){
+        if(withdrawnAt == null){
+            withdrawnAt = now;
+        }
+    }
+
+    public boolean isWithdrawn(){
+        return withdrawnAt != null;
     }
 }

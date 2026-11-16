@@ -1,5 +1,6 @@
 package com.afterme.backend.user.service;
 
+import com.afterme.backend.auth.repository.RefreshTokenRepository;
 import com.afterme.backend.global.exception.BusinessException;
 import com.afterme.backend.global.exception.ErrorCode;
 import com.afterme.backend.user.domain.User;
@@ -14,16 +15,21 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
 
     @Mock UserRepository userRepository;
+    @Mock RefreshTokenRepository refreshTokenRepository;
+    @Mock Clock clock;
 
     @InjectMocks UserService userService;
 
@@ -55,6 +61,19 @@ class UserServiceTest {
 
         assertThat(user.getName()).isEqualTo("김철수");
         assertThat(response.name()).isEqualTo("김철수");
+    }
+
+    @Test
+    void 탈퇴_시각을_기록하고_회원의_모든_리프레시_토큰을_삭제한다() {
+        Instant now = Instant.parse("2026-11-17T00:00:00Z");
+        given(clock.instant()).willReturn(now);
+        given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+        userService.withdraw(1L);
+
+        assertThat(user.isWithdrawn()).isTrue();
+        assertThat(user.getWithdrawnAt()).isEqualTo(now);
+        verify(refreshTokenRepository).deleteAllByUserId(1L);
     }
 
     @Test

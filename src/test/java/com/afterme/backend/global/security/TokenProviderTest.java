@@ -1,5 +1,7 @@
 package com.afterme.backend.global.security;
 
+import com.afterme.backend.user.domain.User;
+import com.afterme.backend.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -8,9 +10,12 @@ import org.springframework.security.oauth2.jwt.JwtException;
 import javax.crypto.SecretKey;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
 
 class TokenProviderTest {
 
@@ -20,10 +25,13 @@ class TokenProviderTest {
     final JwtConfig config = new JwtConfig();
     final SecretKey key = config.jwtSecretKey(properties);
     final TokenProvider tokenProvider = new TokenProvider(config.jwtEncoder(key), properties);
-    final JwtDecoder decoder = config.jwtDecoder(key, properties);
+    final UserRepository userRepository = mock(UserRepository.class);
+    final JwtDecoder decoder = config.jwtDecoder(key, properties, userRepository);
 
     @Test
     void 발급한_액세스_토큰을_검증하면_subject에_사용자_id가_있다() {
+        given(userRepository.findById(42L))
+                .willReturn(Optional.of(User.create("user@afterme.com", "hashed", "User")));
         String token = tokenProvider.createAccessToken(42L, Instant.now());
 
         Jwt jwt = decoder.decode(token);
@@ -34,6 +42,8 @@ class TokenProviderTest {
 
     @Test
     void 만료된_액세스_토큰은_거부한다() {
+        given(userRepository.findById(42L))
+                .willReturn(Optional.of(User.create("user@afterme.com", "hashed", "User")));
         String token = tokenProvider.createAccessToken(42L, Instant.now().minus(Duration.ofHours(1)));
 
         assertThatThrownBy(() -> decoder.decode(token)).isInstanceOf(JwtException.class);

@@ -117,6 +117,30 @@ class AuthServiceLoginTest {
         assertThat(user.getLockedUntil()).isNull();
     }
 
+    @Test
+    void 탈퇴한_회원은_로그인할_수_없다() {
+        user.withdraw(NOW);
+        given(userRepository.findByEmail("user@afterme.com")).willReturn(Optional.of(user));
+
+        assertError(() -> authService.login(new LoginRequest("user@afterme.com", "password1")),
+                ErrorCode.INVALID_CREDENTIALS);
+        verify(passwordEncoder, never()).matches(any(), any());
+        verify(refreshTokenRepository, never()).save(any());
+    }
+
+    @Test
+    void 탈퇴한_회원은_남아_있는_리프레시_토큰으로도_갱신할_수_없다() {
+        user.withdraw(NOW);
+        RefreshToken token = RefreshToken.create(1L, "refresh-hash", NOW.plusSeconds(60), NOW);
+        given(tokenProvider.hashRefreshToken("refresh")).willReturn("refresh-hash");
+        given(refreshTokenRepository.findByTokenHashForUpdate("refresh-hash"))
+                .willReturn(Optional.of(token));
+        given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+        assertError(() -> authService.refresh("refresh"), ErrorCode.INVALID_REFRESH_TOKEN);
+        verify(refreshTokenRepository, never()).save(any());
+    }
+
     private static void assertError(Runnable action, ErrorCode expected) {
         assertThatThrownBy(action::run)
                 .isInstanceOf(BusinessException.class)

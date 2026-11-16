@@ -1,14 +1,10 @@
 package com.afterme.backend.global.security;
 
+import com.afterme.backend.user.repository.UserRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
-import org.springframework.security.oauth2.jwt.JwtClaimValidator;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.JwtEncoder;
-import org.springframework.security.oauth2.jwt.JwtValidators;
-import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
-import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.jwt.*;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 
 import javax.crypto.SecretKey;
@@ -40,7 +36,7 @@ public class JwtConfig {
     }
 
     @Bean
-    public JwtDecoder jwtDecoder(SecretKey jwtSecretKey, JwtProperties properties) {
+    public JwtDecoder jwtDecoder(SecretKey jwtSecretKey, JwtProperties properties, UserRepository userRepository) {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey)
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
@@ -50,11 +46,36 @@ public class JwtConfig {
                         TokenProvider.CLAIM_TYPE,
                         type -> Objects.equals(type, TokenProvider.TYPE_ACCESS))
         ));
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefaultWithIssuer(properties.issuer()),
+                new JwtClaimValidator<String>(
+                        TokenProvider.CLAIM_TYPE,
+                        type -> Objects.equals(type, TokenProvider.TYPE_ACCESS)
+                ),
+                new JwtClaimValidator<String>(
+                        JwtClaimNames.SUB,
+                        subject -> isActiveUser(subject, userRepository)
+                )
+        ));
         return decoder;
     }
 
     @Bean
     public Clock clock() {
         return Clock.systemUTC();
+    }
+
+    private boolean isActiveUser(String subject, UserRepository userRepository){
+        final long userId;
+
+        try{
+            userId = Long.parseLong(subject);
+        }catch(NumberFormatException e){
+            return false;
+        }
+
+        return userRepository.findById(userId)
+                .filter(user -> !user.isWithdrawn())
+                .isPresent();
     }
 }

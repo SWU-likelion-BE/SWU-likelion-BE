@@ -5,10 +5,13 @@ import com.afterme.backend.global.security.JwtProperties;
 import com.afterme.backend.global.security.SecurityConfig;
 import com.afterme.backend.global.security.SecurityErrorResponder;
 import com.afterme.backend.global.security.TokenProvider;
+import com.afterme.backend.user.domain.User;
 import com.afterme.backend.user.dto.UpdateProfileRequest;
 import com.afterme.backend.user.dto.UserProfileResponse;
+import com.afterme.backend.user.repository.UserRepository;
 import com.afterme.backend.user.service.UserService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -19,6 +22,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
+import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -26,8 +30,10 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -49,6 +55,15 @@ class UserControllerTest {
     @Autowired TokenProvider tokenProvider;
 
     @MockitoBean UserService userService;
+    @MockitoBean UserRepository userRepository;
+
+    User user;
+
+    @BeforeEach
+    void setUp() {
+        user = User.create(PROFILE.email(), "hashed", PROFILE.name());
+        given(userRepository.findById(42L)).willReturn(Optional.of(user));
+    }
 
     @Test
     void 토큰_없이_요청하면_401과_공통_오류_형식을_반환한다() throws Exception {
@@ -106,6 +121,29 @@ class UserControllerTest {
                 .andExpect(jsonPath("$.errors[0].field").value("name"));
 
         verify(userService, never()).updateProfile(any(), any());
+    }
+
+    @Test
+    void 회원_탈퇴는_토큰의_사용자_id로_처리하고_204를_반환한다() throws Exception {
+        mockMvc.perform(delete("/api/users/me")
+                        .header("Authorization", "Bearer " + token()))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+
+        verify(userService).withdraw(42L);
+    }
+
+    @Test
+    void 탈퇴_전에_발급한_액세스_토큰으로_프로필을_조회하면_401() throws Exception {
+        String accessToken = token();
+        user.withdraw(Instant.now());
+
+        mockMvc.perform(get("/api/users/me")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_ACCESS_TOKEN"));
+
+        verify(userService, never()).getProfile(anyLong());
     }
 
     private String token() {

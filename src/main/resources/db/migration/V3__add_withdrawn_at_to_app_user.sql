@@ -1,0 +1,2 @@
+ALTER TABLE app_user
+ADD COLUMN withdrawn_at TIMESTAMP WITH TIME ZONE;

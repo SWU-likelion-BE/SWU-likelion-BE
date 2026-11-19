@@ -4,3 +4,4 @@ public enum OrganizationRole {
     ADMIN,
     MEMBER
 }
+

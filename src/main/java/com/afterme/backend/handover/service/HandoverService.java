@@ -3,6 +3,7 @@ package com.afterme.backend.handover.service;
 import com.afterme.backend.global.exception.BusinessException;
 import com.afterme.backend.global.exception.ErrorCode;
 import com.afterme.backend.handover.domain.HandoverProject;
+import com.afterme.backend.handover.domain.ParticipantRole;
 import com.afterme.backend.handover.domain.ProjectParticipant;
 import com.afterme.backend.handover.dto.CreateHandoverRequest;
 import com.afterme.backend.handover.dto.HandoverProjectResponse;
@@ -16,6 +17,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 @Service
@@ -37,6 +41,7 @@ public class HandoverService {
             organizationId = Long.valueOf(request.organizationId());
             predecessorIds = request.predecessorMemberIds().stream()
                     .map(Long::valueOf)
+                    .distinct()
                     .toList();
         } catch (NumberFormatException e) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
@@ -50,6 +55,25 @@ public class HandoverService {
 
         OrganizationMember organizationMember = organizationMemberRepository.findByOrganization_IdAndUser_Id(organizationId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN));
+
+        //권한 검증
+        if(!organizationMember.isActiveAdmin()){
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+
+        //마감일 검증
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
+        LocalDate deadline = request.deadline();
+
+        if (deadline.isBefore(today) || deadline.isAfter(today.plusDays(31))){
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+
+        //전임자 검증
+        if(predecessors.size() != predecessorIds.size() || predecessors.stream()
+                .anyMatch(predecessor -> !predecessor.isActive())){
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
 
         HandoverProject newProject = new HandoverProject(
                 organization,
@@ -66,6 +90,41 @@ public class HandoverService {
 
         projectParticipantRepository.saveAll(participants);
 
-        return new HandoverProjectResponse(handoverProject.getId().toString());
+        List<HandoverProjectResponse.ParticipantResponse> participantResponses =
+                predecessors.stream()
+                        .map(predecessor ->
+                                new HandoverProjectResponse.ParticipantResponse(
+                                        predecessor.getId().toString(),
+                                        predecessor.getUser().getName(),
+                                        ParticipantRole.PREDECESSOR
+                                ))
+                        .toList();
+
+        List<ParticipantRole> myRoles = predecessorIds.contains(organizationMember.getId())
+                ? List.of(ParticipantRole.PREDECESSOR)
+                : List.of();
+
+        long dDay = ChronoUnit.DAYS.between(
+                today, handoverProject.getDeadLine()
+        );
+
+        boolean overdue = dDay < 0;
+
+        return new HandoverProjectResponse(
+                handoverProject.getId().toString(),
+                handoverProject.getOrganization().getId().toString(),
+                handoverProject.getTitle(),
+                handoverProject.getRoleName(),
+                handoverProject.getDeadLine(),
+                handoverProject.getStatus(),
+                participantResponses,
+                myRoles,
+                dDay,
+                overdue,
+                handoverProject.getCompleteness(),
+                handoverProject.getResourceVersion(),
+                handoverProject.getCreatedAt(),
+                handoverProject.getCompletedAt()
+        );
     }
 }

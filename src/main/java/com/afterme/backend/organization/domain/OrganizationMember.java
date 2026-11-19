@@ -3,6 +3,8 @@ package com.afterme.backend.organization.domain;
 import com.afterme.backend.user.domain.User;
 import jakarta.persistence.*;
 
+import static com.afterme.backend.organization.domain.OrganizationRole.ADMIN;
+
 @Entity
 @Table(name="organization_member")
 public class OrganizationMember {
@@ -26,4 +28,19 @@ public class OrganizationMember {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private OrganizationMemberStatus status;
+
+    public boolean isActiveAdmin(){
+
+        return status == OrganizationMemberStatus.ACTIVE
+                && role == OrganizationRole.ADMIN;
+
+    }
+
+    public boolean isActive(){
+        return status == OrganizationMemberStatus.ACTIVE;
+    }
+
+    public Long getId(){ return id; }
+    public User getUser(){ return user;}
+
 }

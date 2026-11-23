@@ -36,6 +36,14 @@ public class ProjectParticipant {
 
     protected ProjectParticipant(){}
 
+    public OrganizationMember getMember() {
+        return member;
+    }
+
+    public ParticipantRole getRole() {
+        return role;
+    }
+
     public static ProjectParticipant predecessor(
             HandoverProject project,
             OrganizationMember member

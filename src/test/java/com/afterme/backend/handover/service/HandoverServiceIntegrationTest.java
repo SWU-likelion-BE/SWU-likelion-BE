@@ -84,6 +84,42 @@ class HandoverServiceIntegrationTest {
                 Long.class, Long.valueOf(response.id()))).isEqualTo(1L);
     }
 
+    @Test
+    void listsAccessibleProjectsWithFiltersAndPageMetadata() {
+        service.create(userId, request(1, List.of(memberId.toString())));
+        var latest = service.create(userId, request(2, List.of(memberId.toString())));
+
+        var response = service.findAll(userId, organizationId, "DRAFT", 0, 1);
+
+        assertThat(response.totalElements()).isEqualTo(2);
+        assertThat(response.totalPages()).isEqualTo(2);
+        assertThat(response.items()).singleElement().satisfies(item -> {
+            assertThat(item.id()).isEqualTo(Long.valueOf(latest.id()));
+            assertThat(item.myRoles()).containsExactly("PREDECESSOR");
+            assertThat(item.dDay()).isEqualTo(2);
+        });
+        assertThat(service.findAll(userId, organizationId, "COMPLETED", 0, 20).items()).isEmpty();
+        assertThat(service.findAll(userId, -1L, null, 0, 20).items()).isEmpty();
+        assertThat(service.findAll(-1L, null, null, 0, 20).items()).isEmpty();
+    }
+
+    @Test
+    void returnsProjectDetailsOnlyToAuthorizedUsers() {
+        var created = service.create(userId, request(1, List.of(memberId.toString())));
+        Long projectId = Long.valueOf(created.id());
+
+        var response = service.findDetail(userId, projectId);
+
+        assertThat(response.id()).isEqualTo(created.id());
+        assertThat(response.deadline()).isEqualTo(created.deadline());
+        assertThat(response.myRoles()).containsExactly(ParticipantRole.PREDECESSOR);
+        assertThat(response.participants()).singleElement()
+                .satisfies(participant -> assertThat(participant.memberId()).isEqualTo(memberId.toString()));
+        assertThatThrownBy(() -> service.findDetail(-1L, projectId))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.RESOURCE_NOT_FOUND));
+    }
+
     @ParameterizedTest
     @ValueSource(ints = {-1, 32})
     void rejectsDeadlineOutsideAllowedRange(int days) {

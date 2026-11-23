@@ -5,14 +5,17 @@ import com.afterme.backend.global.exception.ErrorCode;
 import com.afterme.backend.handover.domain.HandoverProject;
 import com.afterme.backend.handover.domain.ParticipantRole;
 import com.afterme.backend.handover.domain.ProjectParticipant;
-import com.afterme.backend.handover.dto.CreateHandoverRequest;
-import com.afterme.backend.handover.dto.HandoverProjectResponse;
+import com.afterme.backend.handover.dto.*;
 import com.afterme.backend.handover.repository.HandoverProjectRepository;
 import com.afterme.backend.handover.repository.ProjectParticipantRepository;
 import com.afterme.backend.organization.domain.Organization;
 import com.afterme.backend.organization.domain.OrganizationMember;
+import com.afterme.backend.handover.repository.ProjectParticipantRepository.ProjectRole;
 import com.afterme.backend.organization.repository.OrganizationMemberRepository;
 import com.afterme.backend.organization.repository.OrganizationRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +24,8 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -125,6 +130,105 @@ public class HandoverService {
                 handoverProject.getResourceVersion(),
                 handoverProject.getCreatedAt(),
                 handoverProject.getCompletedAt()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public HandoverListResponse findAll(
+            Long userId,
+            Long organizationId,
+            String status,
+            int page,
+            int size
+    ) {
+        if (page < 0 || size < 1 || size > 100) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+
+        Page<HandoverProject> projects =
+                handoverProjectRepository.findAccessibleByUserId(
+                        userId, organizationId, status, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"))
+                );
+
+        // 현재 페이지에 있는 프로젝트의 내 역할을 한 번에 조회
+        List<Long> projectIds = projects.getContent().stream().map(HandoverProject::getId).toList();
+        Map<Long, List<String>> rolesByProjectId = projectIds.isEmpty()
+                ? Map.of()
+                : projectParticipantRepository.findRolesByProjectIdsAndUserId(projectIds, userId).stream()
+                        .collect(Collectors.groupingBy(ProjectRole::getProjectId,
+                                Collectors.mapping(role -> role.getRole().name(), Collectors.toList())));
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
+        List<HandoverSummaryResponse> items = projects.getContent().stream()
+                .map(project -> toSummary(project, rolesByProjectId.getOrDefault(project.getId(), List.of()), today))
+                .toList();
+
+        return new HandoverListResponse(
+                items,
+                projects.getNumber(),
+                projects.getSize(),
+                projects.getTotalElements(),
+                projects.getTotalPages()
+        );
+    }
+
+    private HandoverSummaryResponse toSummary(HandoverProject project, List<String> myRoles, LocalDate today) {
+        int dDay = Math.toIntExact(
+                ChronoUnit.DAYS.between(today, project.getDeadLine())
+        );
+        boolean overdue = dDay < 0;
+
+        return new HandoverSummaryResponse(
+                project.getId(),
+                project.getOrganization().getId(),
+                project.getTitle(),
+                project.getRoleName(),
+                project.getStatus(),
+                myRoles,
+                project.getDeadLine(),
+                dDay,
+                overdue,
+                project.getCompleteness()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public HandoverDetailResponse findDetail(Long userId, Long projectId) {
+        // 조회 권한이 없는 프로젝트도 404로 처리
+        HandoverProject project = handoverProjectRepository.findAccessibleById(projectId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        List<ProjectParticipant> projectParticipants = projectParticipantRepository.findParticipantsByProjectId(projectId);
+        List<HandoverDetailResponse.ParticipantResponse> participants = projectParticipants.stream()
+                .map(participant -> new HandoverDetailResponse.ParticipantResponse(
+                        participant.getMember().getId().toString(),
+                        participant.getMember().getUser().getName(),
+                        participant.getRole()
+                ))
+                .toList();
+        List<ParticipantRole> myRoles = projectParticipants.stream()
+                .filter(participant -> participant.getMember().getUser().getId().equals(userId))
+                .map(ProjectParticipant::getRole)
+                .distinct()
+                .toList();
+
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
+        long dDay = ChronoUnit.DAYS.between(today, project.getDeadLine());
+
+        return new HandoverDetailResponse(
+                project.getId().toString(),
+                project.getOrganization().getId().toString(),
+                project.getTitle(),
+                project.getRoleName(),
+                project.getDeadLine(),
+                project.getStatus(),
+                participants,
+                myRoles,
+                dDay,
+                dDay < 0,
+                project.getCompleteness(),
+                project.getResourceVersion(),
+                project.getCreatedAt(),
+                project.getCompletedAt()
         );
     }
 }

@@ -44,6 +44,10 @@ public class ProjectParticipant {
         return role;
     }
 
+    public static ProjectParticipant successor(HandoverProject project, OrganizationMember member) {
+        return new ProjectParticipant(project, member, ParticipantRole.SUCCESSOR);
+    }
+
     public static ProjectParticipant predecessor(
             HandoverProject project,
             OrganizationMember member

@@ -36,4 +36,10 @@ public interface ProjectParticipantRepository extends JpaRepository<ProjectParti
 
         ParticipantRole getRole();
     }
+
+    boolean existsByProject_IdAndMember_User_IdAndRole(
+            Long projectId,
+            Long userId,
+            ParticipantRole role
+    );
 }

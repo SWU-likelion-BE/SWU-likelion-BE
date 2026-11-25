@@ -29,6 +29,15 @@ public class OrganizationMember {
     @Column(name = "status", nullable = false)
     private OrganizationMemberStatus status;
 
+    public static OrganizationMember activeMember(Organization organization, User user) {
+        OrganizationMember member = new OrganizationMember();
+        member.organization = organization;
+        member.user = user;
+        member.role = OrganizationRole.MEMBER;
+        member.status = OrganizationMemberStatus.ACTIVE;
+        return member;
+    }
+
     public boolean isActiveAdmin(){
 
         return status == OrganizationMemberStatus.ACTIVE

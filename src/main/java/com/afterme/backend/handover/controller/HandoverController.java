@@ -2,7 +2,13 @@ package com.afterme.backend.handover.controller;
 
 import com.afterme.backend.global.response.ApiResponse;
 import com.afterme.backend.global.security.LoginUserId;
+import com.afterme.backend.handover.dto.CreateHandoverInvitationRequest;
 import com.afterme.backend.handover.dto.CreateHandoverRequest;
+import com.afterme.backend.handover.dto.HandoverInvitationCodeRequest;
+import com.afterme.backend.handover.dto.HandoverInvitationPreviewResponse;
+import com.afterme.backend.handover.dto.HandoverInvitationResponse;
+import com.afterme.backend.handover.dto.JoinHandoverResponse;
+import com.afterme.backend.handover.service.HandoverInvitationService;
 import com.afterme.backend.handover.dto.HandoverDetailResponse;
 import com.afterme.backend.handover.dto.HandoverListResponse;
 import com.afterme.backend.handover.dto.HandoverProjectResponse;
@@ -19,6 +25,33 @@ import org.springframework.web.bind.annotation.*;
 public class HandoverController {
 
     private final HandoverService handoverService;
+    private final HandoverInvitationService invitationService;
+
+    @PostMapping("/{projectId}/invitations")
+    public ResponseEntity<ApiResponse<HandoverInvitationResponse>> createInvitation(
+            @LoginUserId Long userId,
+            @PathVariable("projectId") Long projectId,
+            @Valid @RequestBody CreateHandoverInvitationRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.of(invitationService.create(userId, projectId, request)));
+    }
+
+    @PostMapping("/invitations/preview")
+    public ResponseEntity<ApiResponse<HandoverInvitationPreviewResponse>> previewInvitation(
+            @LoginUserId Long userId,
+            @Valid @RequestBody HandoverInvitationCodeRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.of(invitationService.preview(userId, request.code())));
+    }
+
+    @PostMapping("/invitations/join")
+    public ResponseEntity<ApiResponse<JoinHandoverResponse>> joinInvitation(
+            @LoginUserId Long userId,
+            @Valid @RequestBody HandoverInvitationCodeRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.of(invitationService.join(userId, request.code())));
+    }
 
     //인수인계 생성
     @PostMapping

@@ -5,11 +5,17 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.repository.query.Param;
+import jakarta.persistence.LockModeType;
 
 import java.util.Optional;
 
 public interface HandoverProjectRepository extends JpaRepository<HandoverProject, Long> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select project from HandoverProject project where project.id = :projectId")
+    Optional<HandoverProject> findByIdForUpdate(@Param("projectId") Long projectId);
 
     // 목록과 상세에 같은 접근 조건을 적용
     String ACCESS_CONDITION = """

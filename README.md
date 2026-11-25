@@ -2,6 +2,140 @@
 
 Spring Boot 기반 AfterMe 백엔드 프로젝트입니다.
 
+## 퀴즈 구현 현황
+
+`/api/handovers/{projectId}/quizzes` 아래 목록 조회, 응시 시작(`/{quizSetId}/attempts`),
+문항 조회(`/{quizSetId}/attempts/{attemptId}`), 답안 제출(`.../submission`), 결과 조회(`.../result`)를 구현했습니다.
+목록은 `page`(0부터), `size`(기본 20, 최대 100)를 받습니다. 응시는 활성 후임자 본인만 접근합니다.
+문항 응답에는 정답·해설을 포함하지 않으며 제출 후 결과에 문서 버전·항목 근거와 영역별 정답 수를 반환합니다.
+
+제출 예시 (`selectedOption`은 0부터 시작):
+
+```json
+{"answers":[{"questionId":1,"selectedOption":0},{"questionId":2,"selectedOption":1}]}
+```
+
+모든 문항에 한 번씩 답해야 하며 누락·중복·다른 퀴즈 문항·선택지 범위 오류는 400입니다.
+제출 완료 후 재제출, 결과 제출 전 조회, 재응시 제한은 409입니다.
+진행 중인 응시는 시작 요청 시 이어서 반환합니다. 미통과 시 명세의 3일 후 재시험 규칙을 적용합니다(제출 시각 + 3일).
+문서에 없는 통과 후 재응시 금지는 적용하지 않습니다. 점수 표시는 정수 내림, 통과 판정은 반올림 전 정답률을 사용합니다.
+
+### 남은 연동 및 정책
+
+- 생성 요청 API와 영속 작업 큐를 구현했습니다. 실제 AI 호출 워커·문서 어댑터 연결 전에는 생성 작업이 자동 실행되지 않습니다.
+- 생성 연동에서는 공개 문서 접근권한과 버전·섹션 소속을 검증한 후 `QuizSet.ready`로 불변 스냅샷을 저장해야 합니다.
+- 문서 테이블 도입 후 `version_id`, `section_id` 외래키 및 문서 공개 상태 검증을 연결해야 합니다.
+- 현재 문항은 객관식이며 한 문항에 근거 섹션 하나를 저장합니다. 단답형·복수 근거는 추가 설계가 필요합니다.
+- 새 응시는 프로젝트 커트라인(미설정 시 70점)을 저장하고 그 기준으로 채점합니다. 시작·문항·결과 응답의 `passingScore`가 해당 응시의 기준입니다.
+- 목록의 `passingScore`는 현재 프로젝트 기준입니다. 기준 변경은 새 응시에 적용하며 진행·제출된 응시의 기준과 결과는 유지합니다.
+- 재시험 대기시간은 명세의 3일을 제출 시각부터 계산합니다.
+- 체크리스트·완성도 조회·완료 요청·승인 API를 구현했습니다. 실제 문서 데이터와 합의된 완성도 계산식 연결이 필요합니다. [연동 계약](docs/learning-integration.md)을 참고합니다.
+
+### 퀴즈 검증
+
+단위 테스트는 `./gradlew test --tests '*QuizAttemptTest' --tests '*QuizServiceTest'`로 실행합니다.
+전체 테스트는 별도 PostgreSQL DB를 준비하고 `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`,
+`SPRING_DATASOURCE_PASSWORD`, `JWT_SECRET`을 설정하여 `./gradlew test`로 실행합니다.
+`SPRING_JPA_HIBERNATE_DDL_AUTO=validate`를 설정하면 Flyway 스키마와 Entity 매핑도 검증합니다.
+2026-11-25 검증: PostgreSQL 15의 격리 DB에서 V1~V6 적용 및 전체 51개 테스트 통과(퀴즈 12개 포함).
+프로젝트 권장 PostgreSQL 17 환경에서의 확인은 남아 있습니다.
+
+## Q&A 구현 현황
+
+| 기능 | 경로 | 권한 | 성공 |
+|---|---|---|---|
+| 질문 등록 | `POST /api/handovers/{projectId}/questions` | 활성 후임자 | 201 |
+| 질문 수정 | `PATCH /api/handovers/{projectId}/questions/{threadId}` | 작성자 본인인 활성 후임자 | 200 |
+| 질문 목록 | `GET /api/handovers/{projectId}/questions` | 프로젝트 접근 권한 | 200 |
+| 질문·답변 상세 | `GET /api/handovers/{projectId}/questions/{threadId}` | 프로젝트 접근 권한 | 200 |
+| 답변 등록 | `POST /api/handovers/{projectId}/questions/{threadId}/replies` | 활성 전임자 | 201 |
+
+등록 본문은 `{"sectionId":4,"content":"질문 내용"}`, 수정은 `{"revision":1,"content":"수정 내용"}`,
+답변은 `{"questionRevision":1,"content":"답변 내용"}`입니다. 작성자 id는 JWT에서 결정합니다.
+내용은 필수이며 최대 10,000자입니다. 목록은 `status=OPEN|RESOLVED`, `page`(0부터), `size`(기본 20, 최대 100)를 받습니다.
+상세는 `{data:{question:{...},replies:[...]}}`, 목록은 `{data:{items:[...],page,size,totalElements,totalPages}}`입니다.
+
+답변 등록 시 명세에 따라 자동으로 `RESOLVED`가 됩니다. 질문 내용을 변경하면 revision이 증가하며, 기존 해결 상태는 유지합니다.
+기존 답변에는 답변 당시 질문 내용과 revision이 보존됩니다. 오래된 revision으로 수정·답변하면 409를 반환합니다.
+수정과 답변은 동일 질문 행을 잠가 처리합니다. 답변 수정 API는 원 API 명세에 없어 추가하지 않았습니다.
+문서 보완 반영 여부나 완성도 점수는 아직 계산하지 않으며, 문서에 반영되었다는 안내도 생성하지 않습니다.
+
+### 문서·알림 연동 상태
+
+- **문서 연동 전에는 질문 등록·수정·답변·기존 질문 조회를 실제 서비스에서 사용할 수 없습니다.** 빈 목록은 조회 가능합니다.
+- 문서 담당 모듈에서 `PublishedSectionReader` Bean을 제공해야 합니다. 프로젝트 소속과 공개 버전 접근 가능 여부를 검증한 뒤
+  `SectionReference(projectId, versionId, sectionId)`를 반환하고, 없거나 열람할 수 없는 항목은 404로 처리해야 합니다.
+- 기본 구현은 연동 누락 시 409로 차단합니다. 존재하지 않는 문서 id를 그대로 받아 저장하거나 공개 검증을 생략하지 않습니다.
+- 문서 테이블 추가 후 `qa_thread.version_id`, `section_id` 외래키도 연결해야 합니다.
+- 질문·답변 저장과 같은 트랜잭션에서 `qa_outbox_event`에 `QUESTION_CREATED` / `ANSWER_CREATED` 이벤트를 저장합니다.
+  이벤트에는 고유 `dedupe_key`가 있습니다. **알림 발송 워커·알림센터 연결은 미구현**입니다.
+- 알림 담당 모듈은 미처리 이벤트를 소비하고, 질문 등록은 전임자에게, 답변 등록은 질문 작성자에게 전달해야 합니다.
+  알림 저장 시 `dedupe_key`로 중복을 막고 `processed_at`을 기록하는 처리가 필요합니다.
+- Q&A PostgreSQL 통합 테스트에서는 문서 어댑터만 mock으로 대체하며, 실제 문서 모듈 연동을 검증하는 테스트는 아닙니다.
+
+2026-11-25 검증: 격리된 PostgreSQL 15에서 V7 적용과 JPA 스키마 검증을 완료하고 전체 71개 테스트가 통과했습니다.
+Q&A 테스트 20개에는 역할·작성자 권한, 공개 항목 검증 경계, 수정 버전 충돌, HTTP 인증·입력 검증,
+실제 DB 저장·조회·상태 필터·답변 원문 보존·알림 이벤트 저장 검증이 포함됩니다.
+
+## 완료 기준 및 본인 확인
+
+| 기능 | 경로 | 권한 | 상태 |
+|---|---|---|---|
+| 최소 완성도·퀴즈 커트라인 설정 | `PATCH /api/handovers/{projectId}/completion/criteria` | 활성 전임자 | 구현 |
+| 전임자·후임자 본인 확인 | `PUT /api/handovers/{projectId}/completion/confirmations/me` | 요청한 역할로 참여하는 활성 사용자 본인 | 구현 |
+| 기준·확인·완료 요건·승인 상태 조회 | `GET /api/handovers/{projectId}/completion` | 프로젝트 접근 권한 | 구현, 문서·산식 연결 필요 |
+| 완성도와 미충족 요건 조회 | `GET /api/handovers/{projectId}/completeness` | 프로젝트 접근 권한 | 구현, 문서·산식 연결 필요 |
+| 완료 요청 | `POST /api/handovers/{projectId}/completion` | 활성 전임자 | 요건 검증·요청 이력 저장 |
+| 최종 승인 | `POST /api/handovers/{projectId}/completion/approval` | 활성 조직 관리자 | 요건 재검증·양측 확인·프로젝트 완료·감사 이력 저장 |
+
+미설정 기본값은 최소 완성도 80%, 퀴즈 커트라인 70점, 기준 revision 0입니다. 조회만으로 DB에 기본값을 저장하지 않습니다.
+기준 설정은 아래처럼 요청하며, 변경할 수치 중 하나만 보내도 됩니다. 최소 완성도는 80~100, 커트라인은 70~100 범위입니다.
+
+```json
+{"minimumCompleteness":85,"quizPassingScore":80,"revision":0}
+```
+
+GET 응답의 `criteria.revision`을 PATCH의 `revision`에 보냅니다. 실제 값이 바뀌면 revision이 증가하며,
+같은 값을 보내면 revision을 유지합니다. 이전 revision으로 기준을 수정하면 409입니다.
+기준 변경과 확인 처리는 프로젝트 행을 잠가 직렬화합니다. 완료된 프로젝트의 새 기준 변경·새 확인은 409입니다.
+
+본인 확인 요청 예시:
+
+```json
+{"role":"SUCCESSOR"}
+```
+
+인증 사용자에게 실제 배정된 역할만 확인할 수 있습니다. 같은 구성원·역할의 재요청은 원래 확인 기록을 200으로 반환합니다.
+명세에 없는 기준 변경 시 재확인 규칙은 적용하지 않습니다. 기존 본인 확인은 기준 변경 후에도 유지합니다.
+응답의 `criteriaRevision`은 확인 등록 당시 기준의 참고 정보이며, 확인 만료나 재확인 조건이 아닙니다.
+전임자 또는 후임자가 배정되지 않은 경우 해당 역할의 확인 완료는 false입니다. 여러 명이면 해당 역할의 활성 참여자 전원이 확인해야 true입니다.
+
+상태 조회에는 현재 기준, 프로젝트 상태, 완료 시각, 참여자별 확인 여부, `predecessorConfirmed`, `successorConfirmed`를 반환합니다.
+**양측 확인만으로 완료·승인을 처리하지 않습니다.** 필수 업무·답변, 문서 숙지, 버전별 퀴즈, 체크리스트, 미해결 Q&A와 현재 기준을 검사합니다.
+문서 어댑터나 합의된 산식이 없으면 점수는 null, `eligibilityEvaluated=false`이며 요청·승인은 409입니다.
+승인 순간 조건을 다시 검사하고 프로젝트 완료와 승인·감사 이력을 같은 트랜잭션에서 저장합니다.
+
+체크리스트는 `PUT /api/handovers/{projectId}/documents/{documentId}/versions/{versionId}/checklist-items/{itemId}/completion`에
+`{"completed":true}`를 보냅니다. 활성 후임자 본인의 기록만 변경하며 공개 문서 소속을 검사합니다.
+퀴즈 생성은 `POST /api/handovers/{projectId}/quiz-generation-jobs`에 `{"versionId":10,"idempotencyKey":"quiz-version-10"}`를 보내며 202를 반환합니다.
+같은 키·버전은 같은 작업을 반환하고 다른 버전으로 재사용하면 409입니다. 외부 작업 ID는 `quiz-숫자` 형식입니다.
+생성 문서 원문을 보존하고, 결과 저장 시 근거와 공개 버전을 다시 검증합니다. AI 워커와 공통 작업 조회 API 연결은 남아 있습니다.
+
+V8은 기준·확인 이력을 저장하고, 기존 퀴즈 응시의 커트라인을 생성 당시 퀴즈 값으로 이관합니다.
+이후 새 응시는 현재 프로젝트 커트라인을 저장합니다. 커트라인 변경으로 기존 제출 결과를 소급 변경하지 않습니다.
+새 프로젝트 기준이 이전 퀴즈 생성 기준보다 높거나 낮더라도 새 응시는 프로젝트 기준을 따릅니다.
+
+2026-11-25 명세 대조 후 검증: 격리된 PostgreSQL 15에서 V8 적용·JPA 스키마 검증과 전체 94개 테스트가 통과했습니다.
+기준 범위·부분 수정·권한·revision 충돌, 중복 확인, 기준 변경 후 본인 확인 유지,
+통과 후 재응시, 질문 수정 후 기존 상태 유지, HTTP 요청 검증, 응시별 커트라인과 기존 결과 보존을 검증했습니다.
+실제 개발 중 발생한 문제와 해결 과정은 [트러블슈팅](docs/troubleshooting.md)에 정리했습니다.
+첨부 명세와 코드의 대응 관계, 문서 간 충돌 처리, 남은 연동은 [명세 적용 기준](docs/requirements.md)에 정리했습니다.
+
+추가 구현 검증: PostgreSQL 15에서 V9와 JPA 스키마 검증을 포함하여 전체 107개 테스트가 통과했습니다(실패·오류·건너뜀 0).
+완료 요청·승인의 중복 방지, 승인 시 새 질문·기준 변경 재검증, 권한·확인 누락 차단,
+체크리스트 저장, 생성 작업 중복·원문 보존·잘못된 근거 차단을 검증했습니다.
+문서와 산식은 테스트 대역을 사용했으며 실제 외부 모듈 통합 완료를 의미하지 않습니다.
+
 ## 개발 환경
 
 - Java 17

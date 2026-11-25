@@ -42,6 +42,22 @@ public class HandoverProject {
     @Column
     OffsetDateTime completedAt = null;
 
+    @Column
+    private Long approvedBy;
+
+    public Long getApprovedBy() { return approvedBy; }
+
+    public void approveCompletion(Long actorId, int score, java.time.Instant now) {
+        if (score < 0 || score > 100 || completedAt != null) {
+            throw new com.afterme.backend.global.exception.BusinessException(com.afterme.backend.global.exception.ErrorCode.CONFLICT);
+        }
+        this.approvedBy = actorId;
+        this.completedAt = OffsetDateTime.ofInstant(now, java.time.ZoneOffset.UTC);
+        this.status = "COMPLETED";
+        this.completeness = score;
+        this.resourceVersion = (resourceVersion == null ? 0 : resourceVersion) + 1;
+    }
+
     public HandoverProject(){}
 
     public HandoverProject(Organization organizationId, String title,

@@ -2,13 +2,8 @@ package com.afterme.backend.handover.controller;
 
 import com.afterme.backend.global.response.ApiResponse;
 import com.afterme.backend.global.security.LoginUserId;
-import com.afterme.backend.handover.dto.CreateHandoverInvitationRequest;
-import com.afterme.backend.handover.dto.CreateHandoverRequest;
-import com.afterme.backend.handover.dto.HandoverInvitationResponse;
+import com.afterme.backend.handover.dto.*;
 import com.afterme.backend.handover.service.HandoverInvitationService;
-import com.afterme.backend.handover.dto.HandoverDetailResponse;
-import com.afterme.backend.handover.dto.HandoverListResponse;
-import com.afterme.backend.handover.dto.HandoverProjectResponse;
 import com.afterme.backend.handover.service.HandoverService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -67,5 +62,17 @@ public class HandoverController {
     ){
         HandoverDetailResponse response = handoverService.findDetail(userId, projectId);
         return ResponseEntity.ok(ApiResponse.of(response));
+    }
+
+    //인수인계 마감일 연장
+    @PatchMapping("/{projectId}/deadline")
+    public ResponseEntity<ApiResponse<HandoverDeadlineExtensionResponse>> extendHandoverDeadline(
+            @LoginUserId Long userId,
+            @PathVariable("projectId") Long projectId,
+            @Valid @RequestBody ExtendHandoverDeadlineRequest request
+    ){
+        return ResponseEntity.ok(
+                ApiResponse.of(handoverService.extendDeadline(userId, projectId, request)
+        ));
     }
 }

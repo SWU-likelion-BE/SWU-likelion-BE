@@ -45,6 +45,11 @@ public class HandoverProject {
     @Column
     private Long approvedBy;
 
+    public void extendDeadline(LocalDate deadline) {
+        this.deadLine = deadline;
+        this.resourceVersion++;
+    }
+
     public Long getApprovedBy() { return approvedBy; }
 
     public void approveCompletion(Long actorId, int score, java.time.Instant now) {

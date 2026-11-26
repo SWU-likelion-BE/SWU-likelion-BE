@@ -9,6 +9,7 @@ import com.afterme.backend.handover.domain.ParticipantRole;
 import com.afterme.backend.learning.port.LearningDocumentReader;
 import com.afterme.backend.learning.port.LearningDocumentReader.*;
 import com.afterme.backend.qa.dto.QaDtos.CreateQuestion;
+import com.afterme.backend.qa.dto.QaDtos.CreateReply;
 import com.afterme.backend.qa.port.PublishedSectionReader;
 import com.afterme.backend.qa.service.QaService;
 import com.afterme.backend.quiz.domain.*;
@@ -58,6 +59,10 @@ class LearningWorkflowIntegrationTest {
         given(documents.requirePublishedChecklistItem(project, 20L, 10L, 30L)).willReturn(new ChecklistItem(project, 20L, 10L, 30L));
         given(documents.evidence(eq(project), anySet())).willReturn(new Evidence(true, 1, 0, 1, 1,
                 Set.of(10L), Set.of(successor), List.of(new ChecklistItem(project, 20L, 10L, 30L))));
+        given(documents.pageViews(eq(project), eq(Set.of(10L)), anySet()))
+                .willReturn(PageViews.fromProgress(Map.of(successor, new PageCount(5, 5))));
+        given(documents.scoringChecklistItems(project, Set.of(10L)))
+                .willReturn(Optional.of(List.of(new ChecklistItem(project, 20L, 10L, 30L))));
         given(sections.requirePublishedSection(project, 11L)).willReturn(new PublishedSectionReader.SectionReference(project, 10L, 11L));
         // Test-only formula. Production deliberately has no agreed scoring policy yet.
         given(policy.score(any())).willReturn(OptionalInt.of(95));
@@ -187,7 +192,122 @@ class LearningWorkflowIntegrationTest {
         error(() -> generation.request(predecessor, project, new QuizGenerationService.Request(99L, "same-key")), ErrorCode.CONFLICT);
     }
 
+    @Test void scoreAboveThresholdWithoutAnyQuestionCannotRequestCompletion() {
+        learningDoneWithoutQuestion(); identitiesDone();
+        var result = readiness.get(successor, project);
+        assertThat(result.score()).isEqualTo(95);
+        assertThat(result.unmet()).extracting(ReadinessService.Requirement::code).contains("QUESTION_REQUIRED");
+        error(() -> workflow.request(predecessor, project), ErrorCode.CONFLICT);
+        assertNotApproved();
+    }
+
+    @Test void askingOneQuestionStillRequiresPredecessorAnswer() {
+        learningDoneWithoutQuestion();
+        var question = qa.create(successor, project, new CreateQuestion(11L, "Required question"));
+        assertThat(readiness.get(successor, project).unmet()).extracting(ReadinessService.Requirement::code)
+                .contains("UNANSWERED_QUESTIONS").doesNotContain("QUESTION_REQUIRED");
+        qa.reply(predecessor, project, question.threadId(), new CreateReply(1, "Answer"));
+        assertThat(readiness.get(successor, project).eligible()).isTrue();
+    }
+
+    @Test void acknowledgementDoesNotReplaceAllPageViews() {
+        learningDone();
+        given(documents.pageViews(eq(project), anySet(), anySet())).willReturn(new PageViews(true, Set.of()));
+        var result = readiness.get(successor, project);
+        assertThat(result.unmet()).extracting(ReadinessService.Requirement::code)
+                .contains("ALL_PAGES_NOT_VIEWED").doesNotContain("DOCUMENT_ACKNOWLEDGEMENT_REQUIRED");
+        error(() -> workflow.request(predecessor, project), ErrorCode.CONFLICT);
+    }
+
+    @Test void approvalRechecksPageViewsAfterRequest() {
+        learningDone(); identitiesDone();
+        workflow.request(predecessor, project);
+        given(documents.pageViews(eq(project), anySet(), anySet())).willReturn(new PageViews(true, Set.of()));
+        error(() -> workflow.approve(predecessor, project), ErrorCode.CONFLICT);
+        assertNotApproved();
+    }
+
+    @Test void missingPageViewAdapterFailsClosed() {
+        learningDone();
+        given(documents.pageViews(eq(project), anySet(), anySet())).willReturn(PageViews.unavailable());
+        assertThat(readiness.get(successor, project).unmet()).extracting(ReadinessService.Requirement::code)
+                .contains("PAGE_VIEW_DATA_UNAVAILABLE");
+        error(() -> workflow.request(predecessor, project), ErrorCode.CONFLICT);
+    }
+
+    @Test void perSuccessorQuestionPolicyRequiresEachActiveSuccessorToAsk() {
+        learningDone();
+        Long other = user("Other successor");
+        Long organization = jdbc.queryForObject("select organization_id from handover_project where id = ?", Long.class, project);
+        participant(organization, other, "MEMBER", "SUCCESSOR");
+        assertThat(readiness.get(successor, project).unmet())
+                .contains(new ReadinessService.Requirement("QUESTION_REQUIRED", other, null))
+                .doesNotContain(new ReadinessService.Requirement("QUESTION_REQUIRED", successor, null));
+    }
+
+    @Test void agreedPolicyCalculatesActualFourCategoryScore() {
+        learningDone();
+        given(policy.score(any())).willAnswer(invocation -> new EqualWeightCompletenessPolicy().score(invocation.getArgument(0)));
+        given(documents.pageViews(eq(project), anySet(), anySet()))
+                .willReturn(PageViews.fromProgress(Map.of(successor, new PageCount(5, 4))));
+        var result = readiness.get(successor, project);
+        assertThat(result.score()).isEqualTo(95); // (80 + 100 + 100 + 100) / 4
+        assertThat(result.evidence().participantScores()).singleElement().satisfies(score -> {
+            assertThat(score.userId()).isEqualTo(successor);
+            assertThat(score.pageViewRate()).isEqualByComparingTo("80");
+            assertThat(score.score()).isEqualTo(95);
+        });
+        assertThat(result.eligible()).isFalse(); // A high score never replaces the all-pages gate.
+        assertThat(result.unmet()).extracting(ReadinessService.Requirement::code).contains("ALL_PAGES_NOT_VIEWED");
+    }
+
+    @Test void optionalChecklistItemsAffectScoreWithoutBecomingMandatory() {
+        learningDone();
+        given(policy.score(any())).willAnswer(invocation -> new EqualWeightCompletenessPolicy().score(invocation.getArgument(0)));
+        given(documents.scoringChecklistItems(project, Set.of(10L))).willReturn(Optional.of(List.of(
+                new ChecklistItem(project, 20L, 10L, 30L), new ChecklistItem(project, 20L, 10L, 31L))));
+        var result = readiness.get(successor, project);
+        assertThat(result.score()).isEqualTo(87);
+        assertThat(result.evidence().participantScores().get(0).checklistRate()).isEqualByComparingTo("50");
+        assertThat(result.eligible()).isTrue();
+    }
+
+    @Test void legacyCompletionOnlyViewsCannotInventPagePercentage() {
+        learningDone();
+        given(policy.score(any())).willAnswer(invocation -> new EqualWeightCompletenessPolicy().score(invocation.getArgument(0)));
+        given(documents.pageViews(eq(project), anySet(), anySet())).willReturn(new PageViews(true, Set.of(successor)));
+        assertThat(readiness.get(successor, project).score()).isNull();
+    }
+
+    @Test void multipleSuccessorsExposeIndividualScoresWithoutInventingProjectAggregation() {
+        learningDone();
+        Long other = user("Another successor");
+        Long organization = jdbc.queryForObject("select organization_id from handover_project where id = ?", Long.class, project);
+        participant(organization, other, "MEMBER", "SUCCESSOR");
+        given(policy.score(any())).willAnswer(invocation -> new EqualWeightCompletenessPolicy().score(invocation.getArgument(0)));
+        given(documents.pageViews(eq(project), anySet(), anySet())).willReturn(PageViews.fromProgress(Map.of(
+                successor, new PageCount(5, 5), other, new PageCount(5, 5))));
+        var result = readiness.get(successor, project);
+        assertThat(result.score()).isNull();
+        assertThat(result.evidence().participantScores()).extracting(EqualWeightCompletenessPolicy.ParticipantScore::score)
+                .containsExactlyInAnyOrder(100, 25);
+        assertThat(result.unmet()).contains(new ReadinessService.Requirement("QUESTION_REQUIRED", other, null));
+        assertThat(result.eligible()).isFalse();
+    }
+
+    @Test void missingScoringPopulationCannotTreatRequiredItemsAsAllItems() {
+        learningDone();
+        given(policy.score(any())).willAnswer(invocation -> new EqualWeightCompletenessPolicy().score(invocation.getArgument(0)));
+        given(documents.scoringChecklistItems(project, Set.of(10L))).willReturn(Optional.empty());
+        assertThat(readiness.get(successor, project).score()).isNull();
+    }
+
     void learningDone() {
+        learningDoneWithoutQuestion();
+        var question = qa.create(successor, project, new CreateQuestion(11L, "Required question"));
+        qa.reply(predecessor, project, question.threadId(), new CreateReply(1, "Answer"));
+    }
+    void learningDoneWithoutQuestion() {
         var set = quizzes.saveAndFlush(QuizSet.ready(project, 10L, 70, List.of(QuizQuestion.multipleChoice(
                 "Question", List.of("A", "B"), 0, "Evidence", 11L, "TOOLS"))));
         var started = quiz.start(successor, project, set.getId());

@@ -15,4 +15,7 @@ public interface QaThreadRepository extends JpaRepository<QaThread, Long> {
     @Query("select t from QaThread t where t.id = :id and t.projectId = :projectId")
     Optional<QaThread> findForUpdate(@Param("id") Long id, @Param("projectId") Long projectId);
     long countByProjectIdAndStatus(Long projectId, QaStatus status);
+    long countByProjectId(Long projectId);
+    long countByProjectIdAndAuthorId(Long projectId, Long authorId);
+    long countByProjectIdAndAuthorIdAndStatus(Long projectId, Long authorId, QaStatus status);
 }

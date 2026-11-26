@@ -1,6 +1,7 @@
 package com.afterme.backend.learning.config;
 
 import com.afterme.backend.completion.port.CompletenessPolicy;
+import com.afterme.backend.completion.service.EqualWeightCompletenessPolicy;
 import com.afterme.backend.global.exception.*;
 import com.afterme.backend.learning.port.LearningDocumentReader;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -23,5 +24,5 @@ public class LearningIntegrationConfig {
     }
 
     @Bean @ConditionalOnMissingBean(CompletenessPolicy.class)
-    CompletenessPolicy unconfiguredCompletenessPolicy() { return evidence -> OptionalInt.empty(); }
+    CompletenessPolicy equalWeightCompletenessPolicy() { return new EqualWeightCompletenessPolicy(); }
 }

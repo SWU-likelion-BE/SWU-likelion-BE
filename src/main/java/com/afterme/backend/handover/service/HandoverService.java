@@ -231,4 +231,46 @@ public class HandoverService {
                 project.getCompletedAt()
         );
     }
+
+    @Transactional
+    public HandoverDeadlineExtensionResponse extendDeadline(Long userId, Long projectId, ExtendHandoverDeadlineRequest request){
+
+        //프로젝트 조회
+        HandoverProject project = handoverProjectRepository.findByIdForUpdate(projectId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        //권한 및 상태 확인
+        boolean isActiveAdmin = organizationMemberRepository
+                .findByOrganization_IdAndUser_Id(project.getOrganization().getId(), userId)
+                .map(OrganizationMember::isActiveAdmin)
+                .orElse(false);
+
+        if(!isActiveAdmin) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+
+        if ("COMPLETED".equals(project.getStatus())
+                || !project.getResourceVersion().equals(request.expectedVersion())) {
+            throw new BusinessException(ErrorCode.CONFLICT);
+        }
+
+        //날짜 검증
+        LocalDate newDeadline = request.deadline();
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
+
+        if(!newDeadline.isAfter(project.getDeadLine()) || newDeadline.isAfter(today.plusDays(31))){
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+
+        project.extendDeadline(newDeadline);
+        long dDay = ChronoUnit.DAYS.between(today, project.getDeadLine());
+
+        return new HandoverDeadlineExtensionResponse(
+                project.getId().toString(),
+                project.getDeadLine(),
+                dDay,
+                dDay < 0,
+                project.getResourceVersion()
+        );
+    }
 }

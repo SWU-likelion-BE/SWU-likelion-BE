@@ -4,7 +4,9 @@ import com.afterme.backend.global.exception.BusinessException;
 import com.afterme.backend.global.exception.ErrorCode;
 import com.afterme.backend.handover.domain.ParticipantRole;
 import com.afterme.backend.handover.dto.CreateHandoverRequest;
+import com.afterme.backend.handover.dto.ExtendHandoverDeadlineRequest;
 import com.afterme.backend.handover.repository.ProjectParticipantRepository;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -33,6 +35,7 @@ import static org.mockito.Mockito.doThrow;
 class HandoverServiceIntegrationTest {
     @Autowired HandoverService service;
     @Autowired JdbcTemplate jdbc;
+    @Autowired EntityManager entityManager;
     @Autowired PlatformTransactionManager transactionManager;
     @MockitoSpyBean ProjectParticipantRepository participantRepository;
 
@@ -188,6 +191,65 @@ class HandoverServiceIntegrationTest {
                 jdbc.update("DELETE FROM app_user WHERE id = ?", userId);
             });
         }
+    }
+
+    @Test
+    void extendsDeadlineAtUpperBoundAndRejectsStaleVersion() {
+        Long projectId = createProjectForExtension();
+        LocalDate deadline = today.plusDays(31);
+
+        var response = service.extendDeadline(userId, projectId,
+                new ExtendHandoverDeadlineRequest(deadline, "More time needed", 0L));
+
+        assertThat(response.id()).isEqualTo(projectId.toString());
+        assertThat(response.deadline()).isEqualTo(deadline);
+        assertThat(response.dDay()).isEqualTo(31);
+        assertThat(response.overdue()).isFalse();
+        assertThat(response.resourceVersion()).isEqualTo(1L);
+
+        entityManager.flush();
+        entityManager.clear();
+        var detail = service.findDetail(userId, projectId);
+        assertThat(detail.deadline()).isEqualTo(deadline);
+        assertThat(detail.resourceVersion()).isEqualTo(1L);
+        assertExtensionRejected(userId, projectId, deadline, 0L, ErrorCode.CONFLICT);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, 32})
+    void rejectsInvalidExtendedDeadline(int days) {
+        assertExtensionRejected(userId, createProjectForExtension(), today.plusDays(days),
+                0L, ErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    void rejectsDeadlineExtensionByNonAdmin() {
+        Long projectId = createProjectForExtension();
+        jdbc.update("UPDATE organization_member SET organization_role = 'MEMBER' WHERE id = ?", memberId);
+        entityManager.clear();
+
+        assertExtensionRejected(userId, projectId, today.plusDays(2), 0L, ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    void rejectsDeadlineExtensionForCompletedProject() {
+        Long projectId = createProjectForExtension();
+        jdbc.update("UPDATE handover_project SET status = 'COMPLETED' WHERE id = ?", projectId);
+        entityManager.clear();
+
+        assertExtensionRejected(userId, projectId, today.plusDays(2), 0L, ErrorCode.CONFLICT);
+    }
+
+    private Long createProjectForExtension() {
+        return Long.valueOf(service.create(userId, request(1, List.of(memberId.toString()))).id());
+    }
+
+    private void assertExtensionRejected(Long actorId, Long projectId, LocalDate deadline, Long version,
+                                         ErrorCode code) {
+        assertThatThrownBy(() -> service.extendDeadline(actorId, projectId,
+                new ExtendHandoverDeadlineRequest(deadline, "More time needed", version)))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(code));
     }
 
     private CreateHandoverRequest request(int days, List<String> predecessors) {

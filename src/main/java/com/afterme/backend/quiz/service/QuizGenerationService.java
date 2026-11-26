@@ -12,6 +12,7 @@ import jakarta.validation.constraints.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.PageRequest;
 import java.time.*;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -54,12 +55,8 @@ public class QuizGenerationService {
     /** Called by the shared AI job adapter, not an unauthenticated HTTP endpoint. */
     public Job status(Long userId, Long projectId, String jobId) {
         access.project(userId, projectId);
-        Long id;
-        try {
-            if (jobId == null || !jobId.startsWith("quiz-")) throw new NumberFormatException();
-            id = Long.valueOf(jobId.substring(5));
-        } catch (NumberFormatException e) { throw error(ErrorCode.RESOURCE_NOT_FOUND); }
-        return view(jobs.findByIdAndProjectId(id, projectId).orElseThrow(() -> error(ErrorCode.RESOURCE_NOT_FOUND)));
+        return view(jobs.findByIdAndProjectId(parseJobId(jobId), projectId)
+                .orElseThrow(() -> error(ErrorCode.RESOURCE_NOT_FOUND)));
     }
 
     /** Atomically claimed by an AI worker; the external AI call happens after this transaction returns. */
@@ -104,6 +101,54 @@ public class QuizGenerationService {
         var job = jobs.findForUpdate(id).orElseThrow(() -> error(ErrorCode.RESOURCE_NOT_FOUND));
         if (job.getStatus() == QuizGenerationJob.Status.SUCCEEDED) throw error(ErrorCode.CONFLICT);
         job.fail(errorCode, clock.instant());
+    }
+
+    /** 사용자 재시도: FAILED 작업만 다시 대기열로 보낸다. */
+    @Transactional
+    public Job retry(Long userId, Long projectId, String jobId) {
+        access.participant(userId, projectId);
+        access.lock(projectId);
+        var job = jobs.findForUpdate(parseJobId(jobId))
+                .filter(j -> Objects.equals(j.getProjectId(), projectId))
+                .orElseThrow(() -> error(ErrorCode.RESOURCE_NOT_FOUND));
+        if (job.getStatus() != QuizGenerationJob.Status.FAILED) throw error(ErrorCode.CONFLICT);
+        job.retry();
+        return view(job);
+    }
+
+    /** 워커 자동 재시도: 시도 횟수가 남았으면 대기열로, 다 썼으면 실패로 기록한다. */
+    @Transactional
+    public void retryOrFail(Long id, String errorCode, int maxAttempts) {
+        if (errorCode == null || !errorCode.matches("[A-Z0-9_]{1,100}")) throw error(ErrorCode.INVALID_INPUT);
+        var job = jobs.findForUpdate(id).orElseThrow(() -> error(ErrorCode.RESOURCE_NOT_FOUND));
+        if (job.getStatus() != QuizGenerationJob.Status.RUNNING) return;
+        if (job.getAttemptCount() < maxAttempts) job.requeue();
+        else job.fail(errorCode, clock.instant());
+    }
+
+    /** 워커 복구: staleBefore 이전에 시작해 아직 RUNNING인 작업을 되살린다. */
+    @Transactional
+    public void recoverStale(Long id, Instant staleBefore, int maxAttempts) {
+        var job = jobs.findForUpdate(id).orElseThrow(() -> error(ErrorCode.RESOURCE_NOT_FOUND));
+        if (job.getStatus() != QuizGenerationJob.Status.RUNNING
+                || job.getStartedAt() == null || !job.getStartedAt().isBefore(staleBefore)) return;
+        if (job.getAttemptCount() < maxAttempts) job.requeue();
+        else job.fail("AI_JOB_STALE", clock.instant());
+    }
+
+    public List<Long> queuedIds(int limit) {
+        return jobs.findIdsByStatus(QuizGenerationJob.Status.QUEUED, PageRequest.of(0, limit));
+    }
+
+    public List<Long> staleIds(Instant staleBefore, int limit) {
+        return jobs.findIdsByStatusAndStartedAtBefore(QuizGenerationJob.Status.RUNNING, staleBefore, PageRequest.of(0, limit));
+    }
+
+    private Long parseJobId(String jobId) {
+        try {
+            if (jobId == null || !jobId.startsWith("quiz-")) throw new NumberFormatException();
+            return Long.valueOf(jobId.substring(5));
+        } catch (NumberFormatException e) { throw error(ErrorCode.RESOURCE_NOT_FOUND); }
     }
 
     private boolean invalidMetadata(String value) { return value == null || value.isBlank() || value.length() > 255; }

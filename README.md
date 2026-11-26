@@ -29,7 +29,7 @@ Spring Boot 기반 AfterMe 백엔드 프로젝트입니다.
 - 새 응시는 프로젝트 커트라인(미설정 시 70점)을 저장하고 그 기준으로 채점합니다. 시작·문항·결과 응답의 `passingScore`가 해당 응시의 기준입니다.
 - 목록의 `passingScore`는 현재 프로젝트 기준입니다. 기준 변경은 새 응시에 적용하며 진행·제출된 응시의 기준과 결과는 유지합니다.
 - 재시험 대기시간은 명세의 3일을 제출 시각부터 계산합니다.
-- 체크리스트·완성도 조회·완료 요청·승인 API를 구현했습니다. 실제 문서 데이터와 합의된 완성도 계산식 연결이 필요합니다. [연동 계약](docs/learning-integration.md)을 참고합니다.
+- 체크리스트·완성도 조회·완료 요청·승인 API와 개인별 네 영역 각 25% 계산을 구현했습니다. 실제 문서 데이터 연결이 필요합니다. [연동 계약](docs/learning-integration.md)을 참고합니다.
 
 ### 퀴즈 검증
 
@@ -83,8 +83,8 @@ Q&A 테스트 20개에는 역할·작성자 권한, 공개 항목 검증 경계,
 |---|---|---|---|
 | 최소 완성도·퀴즈 커트라인 설정 | `PATCH /api/handovers/{projectId}/completion/criteria` | 활성 전임자 | 구현 |
 | 전임자·후임자 본인 확인 | `PUT /api/handovers/{projectId}/completion/confirmations/me` | 요청한 역할로 참여하는 활성 사용자 본인 | 구현 |
-| 기준·확인·완료 요건·승인 상태 조회 | `GET /api/handovers/{projectId}/completion` | 프로젝트 접근 권한 | 구현, 문서·산식 연결 필요 |
-| 완성도와 미충족 요건 조회 | `GET /api/handovers/{projectId}/completeness` | 프로젝트 접근 권한 | 구현, 문서·산식 연결 필요 |
+| 기준·확인·완료 요건·승인 상태 조회 | `GET /api/handovers/{projectId}/completion` | 프로젝트 접근 권한 | 구현, 실제 문서 연결 필요 |
+| 완성도와 미충족 요건 조회 | `GET /api/handovers/{projectId}/completeness` | 프로젝트 접근 권한 | 개인별 25% 계산 구현, 실제 데이터 연결 필요 |
 | 완료 요청 | `POST /api/handovers/{projectId}/completion` | 활성 전임자 | 요건 검증·요청 이력 저장 |
 | 최종 승인 | `POST /api/handovers/{projectId}/completion/approval` | 활성 조직 관리자 | 요건 재검증·양측 확인·프로젝트 완료·감사 이력 저장 |
 
@@ -112,7 +112,10 @@ GET 응답의 `criteria.revision`을 PATCH의 `revision`에 보냅니다. 실제
 
 상태 조회에는 현재 기준, 프로젝트 상태, 완료 시각, 참여자별 확인 여부, `predecessorConfirmed`, `successorConfirmed`를 반환합니다.
 **양측 확인만으로 완료·승인을 처리하지 않습니다.** 필수 업무·답변, 문서 숙지, 버전별 퀴즈, 체크리스트, 미해결 Q&A와 현재 기준을 검사합니다.
-문서 어댑터나 합의된 산식이 없으면 점수는 null, `eligibilityEvaluated=false`이며 요청·승인은 409입니다.
+문서 어댑터가 없거나 점수 계산에 필요한 데이터가 없으면 점수는 null, `eligibilityEvaluated=false`이며 요청·승인은 409입니다.
+추가 필수 조건으로 활성 후임자마다 최소 1회 질문과 전체 페이지 열람을 검사합니다.
+문서 열람률·체크리스트 완료율·퀴즈 점수·Q&A 해결률을 각 25%로 계산합니다. 후임자별 점수와 영역별 수치를 반환하며 최종 정수 점수는 내림합니다.
+페이지 열람은 숙지 확인과 별도 데이터가 필요하며 연동 전에는 완료를 차단합니다. 여러 후임자의 프로젝트 집계와 체크리스트 0건 정책은 아직 미정이므로 해당 경우 프로젝트 점수 산정을 보류합니다.
 승인 순간 조건을 다시 검사하고 프로젝트 완료와 승인·감사 이력을 같은 트랜잭션에서 저장합니다.
 
 체크리스트는 `PUT /api/handovers/{projectId}/documents/{documentId}/versions/{versionId}/checklist-items/{itemId}/completion`에

@@ -10,5 +10,7 @@ public interface HandoverTaskRepository extends JpaRepository<HandoverTask, Long
 
     List<HandoverTask> findAllByProjectIdOrderByIdAsc(Long projectId);
 
+    boolean existsByIdAndProjectId(Long taskId, Long projectId);
+
     Optional<HandoverTask> findByIdAndProjectId(Long taskId, Long projectId);
 }

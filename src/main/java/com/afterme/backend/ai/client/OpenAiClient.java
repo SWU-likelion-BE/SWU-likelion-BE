@@ -48,8 +48,12 @@ public class OpenAiClient {
                 .build();
     }
 
+    public boolean isConfigured() {
+        return props.apiKey() != null && !props.apiKey().isBlank();
+    }
+
     public Result request(String systemPrompt, String userPrompt, String schemaName, JsonNode schema) {
-        if (props.apiKey() == null || props.apiKey().isBlank()) {
+        if (!isConfigured()) {
             throw new AiCallException("AI_NOT_CONFIGURED");
         }
         Map<String, Object> body = Map.of(

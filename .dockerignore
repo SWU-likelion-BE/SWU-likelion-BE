@@ -1,0 +1,26 @@
+# 빌드 결과물·캐시
+build/
+.gradle/
+out/
+bin/
+
+# Git·IDE
+.git/
+.github/
+.idea/
+.vscode/
+*.iml
+
+# 비밀값·로컬 설정 (이미지에 절대 포함하지 않는다)
+.env
+.env.*
+*.pem
+
+# 이미지 빌드에 필요 없는 파일
+docs/
+deploy/
+*.md
+compose.yaml
+docker-compose*.yml
+Dockerfile
+.dockerignore

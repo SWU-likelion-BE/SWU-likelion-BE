@@ -5,6 +5,7 @@ import com.afterme.backend.global.security.LoginUserId;
 import com.afterme.backend.handover.dto.HandoverProjectResponse;
 import com.afterme.backend.handovertask.domain.HandoverTask;
 import com.afterme.backend.handovertask.dto.CreateHandoverTaskRequest;
+import com.afterme.backend.handovertask.dto.HandoverTaskDetailResponse;
 import com.afterme.backend.handovertask.dto.HandoverTaskResponse;
 import com.afterme.backend.handovertask.dto.UpdateHandoverTaskRequest;
 import com.afterme.backend.handovertask.service.HandoverTaskService;
@@ -47,23 +48,23 @@ public class HandoverTaskController {
     }
 
     @GetMapping("/{taskId}")
-    public ResponseEntity<ApiResponse<HandoverTaskResponse>> getHandoverTaskDetail(
+    public ResponseEntity<ApiResponse<HandoverTaskDetailResponse>> getHandoverTaskDetail(
             @LoginUserId Long userId,
             @PathVariable Long projectId,
             @PathVariable Long taskId
     ){
-        HandoverTaskResponse task = handoverTaskService.getDetail(userId, projectId, taskId);
+        HandoverTaskDetailResponse task = handoverTaskService.getDetail(userId, projectId, taskId);
         return ResponseEntity.ok(ApiResponse.of(task));
     }
 
     @PatchMapping("/{taskId}")
-    public ResponseEntity<ApiResponse<HandoverTaskResponse>> updateHandoverTask(
+    public ResponseEntity<ApiResponse<HandoverTaskDetailResponse>> updateHandoverTask(
             @LoginUserId Long userId,
             @PathVariable Long projectId,
             @PathVariable Long taskId,
             @Valid @RequestBody UpdateHandoverTaskRequest request
     ){
-        HandoverTaskResponse task = handoverTaskService.update(userId, projectId, taskId, request);
+        HandoverTaskDetailResponse task = handoverTaskService.update(userId, projectId, taskId, request);
         return ResponseEntity.ok(ApiResponse.of(task));
     }
 }

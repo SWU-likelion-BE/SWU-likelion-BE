@@ -22,6 +22,12 @@ public class HandoverTask {
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
+    @Column(columnDefinition = "text")
+    private String overview;
+
+    @Column(columnDefinition = "text")
+    private String details;
+
     protected HandoverTask(){}
 
     public HandoverTask(Long projectId, String title, OffsetDateTime now){
@@ -36,6 +42,16 @@ public class HandoverTask {
         this.updatedAt = now;
     }
 
+    public void updateOverview(String overview, OffsetDateTime now){
+        this.overview = overview;
+        this.updatedAt = now;
+    }
+
+    public void updateDetails(String details, OffsetDateTime now){
+        this.details = details;
+        this.updatedAt = now;
+    }
+
     public Long getId(){return id;}
 
     public Long getProjectId(){return projectId;}
@@ -45,4 +61,8 @@ public class HandoverTask {
     public OffsetDateTime getCreatedAt(){return createdAt;}
 
     public OffsetDateTime getUpdatedAt(){return updatedAt;}
+
+    public String getOverview(){return overview;}
+
+    public String getDetails(){return details;}
 }

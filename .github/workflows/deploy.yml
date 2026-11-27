@@ -1,0 +1,195 @@
+name: Deploy (main → EC2)
+
+# develop → main 머지(= main push) 시에만 배포한다.
+on:
+  push:
+    branches: [main]
+
+# 배포가 겹치지 않게 순서대로 실행한다. (진행 중인 배포는 취소하지 않음)
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: afterme-backend
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # 통합 테스트(@SpringBootTest)용 PostgreSQL. 운영 DB와 무관한 일회용 컨테이너다.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: afterme_test
+          POSTGRES_USER: afterme
+          POSTGRES_PASSWORD: afterme_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U afterme -d afterme_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/afterme_test
+      SPRING_DATASOURCE_USERNAME: afterme
+      SPRING_DATASOURCE_PASSWORD: afterme_test
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_JPA_OPEN_IN_VIEW: "false"
+      JWT_SECRET: ci-only-test-secret-key-at-least-32-bytes-long
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Run tests
+        run: |
+          chmod +x gradlew
+          ./gradlew test --no-daemon
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: build/reports/tests/test
+          retention-days: 7
+
+  build-push:
+    name: Build & Push image (GHCR)
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # GHCR 이미지 경로는 소문자여야 한다. (SWU-likelion-BE → swu-likelion-be)
+      - name: Resolve image name
+        id: image
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "repo=ghcr.io/${owner}/${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${owner}/${IMAGE_NAME}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.image.outputs.repo }}:${{ github.sha }}
+            ${{ steps.image.outputs.repo }}:latest
+          # 패키지를 이 저장소에 연결해 GITHUB_TOKEN으로 push/pull 할 수 있게 한다.
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to EC2
+    needs: build-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy compose file to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: docker-compose.prod.yml
+          target: /home/${{ secrets.EC2_USER }}/app
+
+      - name: Pull image & restart containers
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          APP_IMAGE: ${{ needs.build-push.outputs.image }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: APP_IMAGE,GHCR_USER,GHCR_TOKEN
+          command_timeout: 10m
+          script: |
+            set -euo pipefail
+            cd ~/app
+
+            if [ ! -f .env ]; then
+              echo "::error::~/app/.env 가 없습니다. 서버에서 먼저 작성해 주세요."
+              exit 1
+            fi
+
+            COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env"
+
+            # 이 토큰은 워크플로 실행 동안만 유효하며, pull 직후 로그아웃한다.
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            export APP_IMAGE
+            $COMPOSE pull app
+            docker logout ghcr.io
+
+            $COMPOSE up -d --remove-orphans
+
+            # 서버 안에서 앱 헬스 체크 (JVM 기동 + Flyway 마이그레이션 대기, 최대 약 3분)
+            for i in $(seq 1 36); do
+              if curl -fsS http://127.0.0.1:8080/actuator/health | grep -q '"status":"UP"'; then
+                echo "App is UP (${i}회 시도)"
+                docker image prune -f > /dev/null
+                exit 0
+              fi
+              sleep 5
+            done
+
+            echo "::error::헬스 체크 실패. 최근 앱 로그:"
+            $COMPOSE ps
+            $COMPOSE logs --tail=200 app
+            exit 1
+
+      # 외부(Nginx 경유)에서도 접근되는지 확인한다.
+      - name: Health check via Nginx
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS "http://${{ secrets.EC2_HOST }}/actuator/health" | grep -q '"status":"UP"'; then
+              echo "Public health check passed"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::http://EC2_HOST/actuator/health 응답 실패 (Nginx 설정·보안 그룹 확인)"
+          exit 1

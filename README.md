@@ -1,6 +1,92 @@
 # AfterMe Backend
 
-Spring Boot 기반 AfterMe 백엔드 프로젝트입니다.
+AfterMe는 퇴사·이동하는 전임자의 업무 지식을 AI 인터뷰로 정리해 인수인계서로 만들고,
+후임자가 문서 열람·Q&A·퀴즈로 숙지 여부를 확인하는 인수인계 지원 서비스입니다.
+이 저장소는 Spring Boot 기반 API 서버입니다.
+
+- [기술 스택](#기술-스택)
+- [프로젝트 구조](#프로젝트-구조)
+- [배포 아키텍처](#배포-아키텍처)
+- [로컬 실행 방법](#로컬-실행-방법)
+- [기여 가이드 (커밋·브랜치·PR 규칙)](CONTRIBUTING.md)
+- [트러블슈팅](docs/troubleshooting.md)
+
+## 기술 스택
+
+| 구분 | 사용 기술 |
+|---|---|
+| Language | Java 17 |
+| Framework | Spring Boot 4, Spring Web MVC, Spring Data JPA, Spring Security (OAuth2 Resource Server · JWT) |
+| Database | PostgreSQL 17, Flyway |
+| API 문서 | springdoc-openapi (Swagger UI, 로컬에서만 공개) |
+| Build | Gradle Wrapper |
+| Test | JUnit 5, Mockito, Spring Boot Test |
+| Infra | AWS EC2 (Ubuntu 24.04), Docker · Docker Compose, Nginx |
+| CI/CD | GitHub Actions, GitHub Container Registry (GHCR) |
+
+## 프로젝트 구조
+
+```
+.
+├── .github/workflows/deploy.yml   # main push 시 테스트 → 이미지 빌드·push → EC2 배포
+├── deploy/nginx/afterme.conf      # EC2 Nginx 리버스 프록시 설정
+├── docs/                          # 요구사항, 트러블슈팅 등 문서
+├── Dockerfile                     # 멀티스테이지 빌드 (JDK 17 빌드 → JRE 17 실행)
+├── compose.yaml                   # 로컬 개발용 PostgreSQL
+├── docker-compose.prod.yml        # 운영용 (앱 + PostgreSQL)
+└── src/main
+    ├── java/com/afterme/backend
+    │   ├── global          # 공통 응답·예외, 보안(JWT), CORS 등 설정
+    │   ├── auth            # 회원가입, 로그인, 토큰 갱신·로그아웃
+    │   ├── user            # 내 프로필, 회원 탈퇴
+    │   ├── organization    # 조직
+    │   ├── handover        # 인수인계 프로젝트, 후임자 초대, 마감일
+    │   ├── handovertask    # 업무 등록·상세, 첨부파일
+    │   ├── interview       # AI 인터뷰 세션·질문·답변 이력
+    │   ├── learning        # 학습 기능 공통 접근 권한·문서 조회 연동
+    │   ├── checklist       # 체크리스트
+    │   ├── qa              # 문서 항목 Q&A
+    │   ├── quiz            # 퀴즈 생성·응시·채점
+    │   └── completion      # 완성도 점수, 완료 기준·승인
+    └── resources
+        ├── application.properties         # 공통 설정
+        ├── application-local.properties   # 로컬 (localhost:15432 DB)
+        ├── application-prod.properties    # 운영 (환경변수 주입)
+        └── db/migration                   # Flyway 마이그레이션 (V1~)
+```
+
+각 도메인 패키지는 `controller` / `service` / `repository` / `domain` / `dto` 계층으로 나눕니다.
+
+## 배포 아키텍처
+
+```mermaid
+flowchart LR
+    Dev["개발자"] -->|"develop → main 머지"| GH["GitHub (main)"]
+    GH --> GA["GitHub Actions<br/>테스트 → 이미지 빌드"]
+    GA -->|"docker push"| GHCR["GHCR<br/>afterme-backend 이미지"]
+    GA -->|"SSH: compose pull && up -d"| EC2
+
+    subgraph EC2["AWS EC2 (Ubuntu 24.04, t3.micro)"]
+        N["Nginx :80"] -->|"127.0.0.1:8080"| S["Spring Boot 컨테이너"]
+        S -->|"Docker 내부 네트워크"| P[("PostgreSQL 17 컨테이너<br/>named volume")]
+    end
+
+    GHCR -->|"docker pull"| S
+    U["클라이언트"] -->|"HTTP :80"| N
+```
+
+| 구간 | 내용 |
+|---|---|
+| 트리거 | `main` 브랜치 push (develop → main 머지)일 때만 실행 |
+| CI | Postgres 17 서비스 컨테이너로 전체 테스트 실행 |
+| 이미지 | `ghcr.io/swu-likelion-be/afterme-backend:{커밋 SHA}`, `:latest` |
+| 배포 | EC2 `~/app`에 `docker-compose.prod.yml` 복사 → `docker compose pull && up -d` |
+| 확인 | 서버 내부 `127.0.0.1:8080/actuator/health`, 외부 `http://{EC2}/actuator/health` 모두 `UP`이어야 성공 |
+| 네트워크 | 외부에는 Nginx(80)만 노출. 앱은 127.0.0.1:8080, DB는 포트 미노출 |
+| 비밀값 | EC2 `~/app/.env`와 GitHub Secrets에만 보관 (저장소에 커밋 금지) |
+
+운영 설정은 `prod` 프로파일([application-prod.properties](src/main/resources/application-prod.properties))로 적용합니다.
+Swagger는 비활성화되고, Actuator는 `health`만 공개됩니다.
 
 ## 퀴즈 구현 현황
 

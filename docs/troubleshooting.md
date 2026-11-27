@@ -1,5 +1,31 @@
 # 개발 및 테스트 트러블슈팅
 
+## 작성 템플릿
+
+새 항목은 아래 형식으로 추가합니다.
+
+```markdown
+## {한 줄 제목}
+
+- 문제: 어떤 상황에서 어떤 오류가 났는지 (오류 메시지 그대로)
+- 원인: 왜 발생했는지
+- 해결: 무엇을 해서 해결했는지 (실행한 명령어 포함)
+```
+
+## docker 실행 시 permission denied (docker.sock)
+
+- 문제: EC2에서 `docker run`, `docker ps` 등을 실행하면 아래 오류가 발생했다.
+  ```
+  permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock
+  ```
+- 원인: `sudo usermod -aG docker ubuntu`로 ubuntu 사용자를 docker 그룹에 추가했지만, 그룹 변경은 새 로그인 세션부터 적용된다. 현재 SSH 세션에는 아직 반영되지 않았다.
+- 해결: 아래 둘 중 하나를 실행한 뒤 `docker ps`가 sudo 없이 동작하는지 확인했다.
+  ```bash
+  newgrp docker   # 현재 세션에 바로 반영
+  # 또는 exit 후 SSH 재접속
+  groups          # 출력에 docker가 있으면 적용된 것
+  ```
+
 ## 테스트 실행 시 DataSource 생성 실패
 
 - 현상: 전체 테스트 중 `DataSourceBeanCreationException`으로 Spring 컨텍스트가 시작되지 않았다.

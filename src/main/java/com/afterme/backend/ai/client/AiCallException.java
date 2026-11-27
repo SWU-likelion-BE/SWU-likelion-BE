@@ -19,4 +19,13 @@ public class AiCallException extends RuntimeException {
     public String getCode() {
         return code;
     }
+
+    /** 다시 시도하면 성공할 수 있는 실패인지. 키 오류·거부·요청 형식 오류는 다시 해도 같다. */
+    public boolean isRetryable() {
+        return switch (code) {
+            case "AI_TIMEOUT", "AI_NETWORK_ERROR", "AI_RATE_LIMITED",
+                 "AI_OUTPUT_TRUNCATED", "AI_OUTPUT_INVALID" -> true;
+            default -> code.startsWith("AI_HTTP_5");
+        };
+    }
 }

@@ -28,7 +28,8 @@ AfterMe는 퇴사·이동하는 전임자의 업무 지식을 AI 인터뷰로 �
 
 ```
 .
-├── .github/workflows/deploy.yml   # main push 시 테스트 → 이미지 빌드·push → EC2 배포
+├── .github/workflows/ci.yml       # develop·main 대상 PR: 테스트 + Docker 빌드 검증
+├── .github/workflows/deploy.yml   # main push: CI → 이미지 빌드·push → EC2 배포
 ├── deploy/nginx/afterme.conf      # EC2 Nginx 리버스 프록시 설정
 ├── docs/                          # 요구사항, 트러블슈팅 등 문서
 ├── Dockerfile                     # 멀티스테이지 빌드 (JDK 17 빌드 → JRE 17 실행)
@@ -77,7 +78,8 @@ flowchart LR
 
 | 구간 | 내용 |
 |---|---|
-| 트리거 | `main` 브랜치 push (develop → main 머지)일 때만 실행 |
+| PR 검증 ([ci.yml](.github/workflows/ci.yml)) | develop·main 대상 PR마다 전체 테스트 + Docker 빌드·prod 프로파일 기동 확인 (push·배포 없음) |
+| 배포 트리거 ([deploy.yml](.github/workflows/deploy.yml)) | `main` 브랜치 push (develop → main 머지)일 때만 실행. 같은 검증을 다시 거친 뒤 배포 |
 | CI | Postgres 17 서비스 컨테이너로 전체 테스트 실행 |
 | 이미지 | `ghcr.io/swu-likelion-be/afterme-backend:{커밋 SHA}`, `:latest` |
 | 배포 | EC2 `~/app`에 `docker-compose.prod.yml` 복사 → `docker compose pull && up -d` |

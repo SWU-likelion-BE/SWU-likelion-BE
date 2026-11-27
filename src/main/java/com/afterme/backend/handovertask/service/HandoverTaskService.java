@@ -3,10 +3,9 @@ package com.afterme.backend.handovertask.service;
 import com.afterme.backend.global.exception.BusinessException;
 import com.afterme.backend.global.exception.ErrorCode;
 import com.afterme.backend.handover.domain.ParticipantRole;
-import com.afterme.backend.handover.repository.HandoverProjectRepository;
-import com.afterme.backend.handover.repository.ProjectParticipantRepository;
 import com.afterme.backend.handovertask.domain.HandoverTask;
 import com.afterme.backend.handovertask.dto.CreateHandoverTaskRequest;
+import com.afterme.backend.handovertask.dto.HandoverTaskDetailResponse;
 import com.afterme.backend.handovertask.dto.HandoverTaskResponse;
 import com.afterme.backend.handovertask.dto.UpdateHandoverTaskRequest;
 import com.afterme.backend.handovertask.repository.HandoverTaskRepository;
@@ -65,23 +64,29 @@ public class HandoverTaskService {
     }
 
     @Transactional(readOnly = true)
-    public HandoverTaskResponse getDetail(Long userId, Long projectId, Long taskId){
+    public HandoverTaskDetailResponse getDetail(Long userId, Long projectId, Long taskId){
         access.project(userId, projectId);
 
         HandoverTask task = handoverTaskRepository.findByIdAndProjectId(taskId, projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        return new HandoverTaskResponse(
+        return toDetailResponse(task);
+    }
+
+    private HandoverTaskDetailResponse toDetailResponse(HandoverTask task) {
+        return new HandoverTaskDetailResponse(
                 task.getId(),
                 task.getProjectId(),
                 task.getTitle(),
+                task.getOverview(),
+                task.getDetails(),
                 task.getCreatedAt(),
                 task.getUpdatedAt()
         );
     }
 
     @Transactional
-    public HandoverTaskResponse update(
+    public HandoverTaskDetailResponse update(
             Long userId,
             Long projectId,
             Long taskId,
@@ -93,7 +98,20 @@ public class HandoverTaskService {
         HandoverTask task = handoverTaskRepository.findByIdAndProjectId(taskId, projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
-        task.rename(request.title().strip(), OffsetDateTime.now(clock));
-        return toResponse(task);
+        OffsetDateTime now = OffsetDateTime.now(clock);
+
+        if(request.hasTitle()){
+            task.rename(request.title().strip(), now);
+        }
+
+        if(request.hasOverview()){
+            task.updateOverview(request.overview(), now);
+        }
+
+        if(request.hasDetails()){
+            task.updateDetails(request.details(), now);
+        }
+
+        return toDetailResponse(task);
     }
 }

@@ -57,5 +57,15 @@ public class QuizGenerationJob {
         this.promptVersion = promptVersion; this.finishedAt = now; this.errorCode = null;
     }
     public void fail(String code, Instant now) { status = Status.FAILED; errorCode = code; finishedAt = now; }
+    public void requeue() {
+        status = Status.QUEUED;
+        startedAt = null;
+        finishedAt = null;
+        errorCode = null;
+    }
+    public void retry() {
+        requeue();
+        attemptCount = 0;
+    }
     public List<Source> getSources() { return List.copyOf(sources); }
 }

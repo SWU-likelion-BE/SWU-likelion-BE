@@ -16,6 +16,9 @@ public interface DocumentVersionRepository extends JpaRepository<DocumentVersion
     @EntityGraph(attributePaths = {"document", "sections"})
     Optional<DocumentVersion> findByIdAndDocument_TaskId(Long id, Long taskId);
 
+    @EntityGraph(attributePaths = {"document", "sections"})
+    Optional<DocumentVersion> findByIdAndDocument_Id(Long id, Long documentId);
+
     @Modifying(flushAutomatically = true)
     @Query(value = """
             insert into handover_document_version

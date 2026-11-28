@@ -6,14 +6,20 @@ import com.afterme.backend.handoverdocument.dto.DraftResponse;
 import com.afterme.backend.handoverdocument.dto.DraftSectionInput;
 import com.afterme.backend.handoverdocument.dto.UpdateDraftRequest;
 import com.afterme.backend.handoverdocument.service.HandoverDocumentService;
+import com.afterme.backend.qa.dto.QaDtos.CreateQuestion;
+import com.afterme.backend.qa.dto.QaDtos.SectionOption;
+import com.afterme.backend.qa.service.QaAttachmentService;
+import com.afterme.backend.qa.service.QaService;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,6 +30,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Transactional
 class HandoverDocumentIntegrationTest {
     @Autowired HandoverDocumentService documents;
+    @Autowired QaService qa;
+    @Autowired QaAttachmentService attachments;
     @Autowired JdbcTemplate jdbc;
     @Autowired EntityManager entityManager;
 
@@ -110,6 +118,42 @@ class HandoverDocumentIntegrationTest {
         assertError(() -> documents.getDraft(successor, project, task, id), ErrorCode.FORBIDDEN);
         assertError(() -> documents.updateDraft(successor, project, task, id,
                 new UpdateDraftRequest(0L, "Edited", List.of())), ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    void publishedSectionsSupportQuestionsAndAttachmentsAcrossDocumentVersions() throws Exception {
+        Long firstVersion = generate("document-" + UUID.randomUUID());
+        DraftResponse first = documents.getDraft(predecessor, project, task, firstVersion);
+        assertThat(qa.listSections(successor, project)).isEmpty();
+
+        var publication = documents.publish(predecessor, project, first.documentId(), firstVersion, first.revision());
+        assertThat(documents.publish(predecessor, project, first.documentId(), firstVersion, first.revision()))
+                .isEqualTo(publication);
+        List<SectionOption> options = qa.listSections(successor, project);
+        assertThat(options).extracting(SectionOption::displayOrder).containsExactly(1, 2, 3);
+        var question = qa.create(successor, project, new CreateQuestion(options.get(1).sectionId(), "Question"));
+        assertThat(question.sectionTitle()).isEqualTo("Second");
+
+        byte[] bytes = "%PDF-1.7\n".getBytes(StandardCharsets.US_ASCII);
+        var attachment = attachments.upload(successor, project, question.threadId(),
+                new MockMultipartFile("file", "notes.pdf", "application/octet-stream", bytes));
+
+        Long secondVersion = generate("document-" + UUID.randomUUID());
+        DraftResponse second = documents.getDraft(predecessor, project, task, secondVersion);
+        documents.publish(predecessor, project, second.documentId(), secondVersion, second.revision());
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(qa.listSections(successor, project)).extracting(SectionOption::versionId)
+                .containsOnly(secondVersion);
+        var detail = qa.detail(predecessor, project, question.threadId());
+        assertThat(detail.question().versionId()).isEqualTo(firstVersion);
+        assertThat(detail.question().sectionDisplayOrder()).isEqualTo(2);
+        assertThat(detail.attachments()).containsExactly(attachment);
+        assertThat(attachments.download(predecessor, project, question.threadId(), attachment.attachmentId())
+                .getContent()).isEqualTo(bytes);
+        attachments.delete(successor, project, question.threadId(), attachment.attachmentId());
+        assertThat(qa.detail(predecessor, project, question.threadId()).attachments()).isEmpty();
     }
 
     private Long generate(String jobId) {

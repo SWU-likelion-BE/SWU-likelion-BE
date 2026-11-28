@@ -2,6 +2,7 @@ package com.afterme.backend.handovertask.service;
 
 import com.afterme.backend.global.exception.BusinessException;
 import com.afterme.backend.global.exception.ErrorCode;
+import com.afterme.backend.global.file.AttachmentFilename;
 import com.afterme.backend.handovertask.domain.HandoverTaskAttachment;
 import com.afterme.backend.handovertask.dto.HandoverTaskAttachmentResponse;
 import com.afterme.backend.handovertask.repository.HandoverTaskAttachmentRepository;
@@ -44,7 +45,7 @@ public class HandoverTaskAttachmentService {
         }
 
         HandoverTaskAttachment attachment = attachments.save(new HandoverTaskAttachment(
-                taskId, filename(file.getOriginalFilename()), contentType(file.getContentType()),
+                taskId, AttachmentFilename.sanitize(file.getOriginalFilename()), contentType(file.getContentType()),
                 file.getBytes(), OffsetDateTime.now(clock)));
         return new HandoverTaskAttachmentResponse(attachment.getId(), attachment.getOriginalFilename(),
                 attachment.getContentType(), attachment.getSizeBytes(), attachment.getCreatedAt());
@@ -69,18 +70,6 @@ public class HandoverTaskAttachmentService {
         if (!tasks.existsByIdAndProjectId(taskId, projectId)) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
-    }
-
-    private static String filename(String originalFilename) {
-        if (originalFilename == null) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT);
-        }
-        String path = originalFilename.replace('\\', '/');
-        String name = path.substring(path.lastIndexOf('/') + 1).replaceAll("\\p{Cntrl}", "").strip();
-        if (name.isEmpty() || name.length() > 255 || name.equals(".") || name.equals("..")) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT);
-        }
-        return name;
     }
 
     private static String contentType(String value) {

@@ -15,9 +15,22 @@ public final class QaDtos {
                               @NotBlank @Size(max = 10000) String content) {}
     public record Question(Long threadId, Long projectId, Long versionId, Long sectionId, Long authorId,
                            String content, QaStatus status, int revision, int replyCount,
-                           Instant createdAt, Instant updatedAt) {}
+                           Instant createdAt, Instant updatedAt, String sectionTitle, Integer sectionDisplayOrder) {
+        public Question(Long threadId, Long projectId, Long versionId, Long sectionId, Long authorId,
+                        String content, QaStatus status, int revision, int replyCount,
+                        Instant createdAt, Instant updatedAt) {
+            this(threadId, projectId, versionId, sectionId, authorId, content, status, revision, replyCount,
+                    createdAt, updatedAt, null, null);
+        }
+    }
     public record Reply(Long replyId, Long authorId, String content, int questionRevision,
                         String questionContent, Instant createdAt) {}
-    public record Detail(Question question, List<Reply> replies) {}
+    public record Detail(Question question, List<Reply> replies, List<Attachment> attachments) {
+        public Detail(Question question, List<Reply> replies) {
+            this(question, replies, List.of());
+        }
+    }
+    public record SectionOption(Long sectionId, Long versionId, Long taskId, String title, Integer displayOrder) {}
+    public record Attachment(Long attachmentId, String fileName, String contentType, long sizeBytes, String downloadUrl) {}
     public record QuestionPage(List<Question> items, int page, int size, long totalElements, int totalPages) {}
 }

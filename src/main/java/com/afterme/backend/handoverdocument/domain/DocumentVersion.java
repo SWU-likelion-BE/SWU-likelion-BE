@@ -44,6 +44,8 @@ public class DocumentVersion {
     @Column(nullable = false)
     private Instant updatedAt;
 
+    private Instant publishedAt;
+
     @OneToMany(mappedBy = "version", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("position ASC")
     private List<DocumentSection> sections = new ArrayList<>();
@@ -61,6 +63,13 @@ public class DocumentVersion {
 
     public void removeSections(Collection<DocumentSection> removed) {
         sections.removeAll(removed);
+    }
+
+    public void publish(Instant now) {
+        status = Status.PUBLISHED;
+        publishedAt = now;
+        updatedAt = now;
+        revision++;
     }
 
     public void recordEdit(String title, Instant now) {

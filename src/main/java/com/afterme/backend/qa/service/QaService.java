@@ -14,6 +14,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
+import java.util.List;
 import java.util.Objects;
 
 @Service
@@ -26,6 +27,7 @@ public class QaService {
     private final QaReplyRepository replies;
     private final QaOutboxEventRepository events;
     private final PublishedSectionReader sections;
+    private final QaAttachmentRepository attachments;
     private final Clock clock;
 
     @Transactional
@@ -37,7 +39,7 @@ public class QaService {
         QaThread thread = threads.save(QaThread.create(projectId, section.versionId(), section.sectionId(),
                 userId, request.content(), now));
         events.save(QaOutboxEvent.questionCreated(thread, now));
-        return question(thread);
+        return question(thread, section);
     }
 
     @Transactional
@@ -46,18 +48,25 @@ public class QaService {
         lockProject(projectId);
         QaThread thread = lockedThread(projectId, threadId);
         if (!thread.getAuthorId().equals(userId)) fail(ErrorCode.FORBIDDEN);
-        verifySection(thread);
+        SectionReference section = verifySection(thread);
         if (!Objects.equals(request.revision(), thread.getRevision())) fail(ErrorCode.CONFLICT);
         thread.edit(request.content(), clock.instant());
-        return question(thread);
+        return question(thread, section);
+    }
+
+    public List<SectionOption> listSections(Long userId, Long projectId) {
+        requireAccess(userId, projectId);
+        return sections.listPublishedSections(projectId).stream()
+                .map(section -> new SectionOption(section.sectionId(), section.versionId(), section.taskId(),
+                        section.title(), section.displayOrder()))
+                .toList();
     }
 
     public QuestionPage list(Long userId, Long projectId, QaStatus status, int page, int size) {
         requireAccess(userId, projectId);
         if (page < 0 || size < 1 || size > 100) fail(ErrorCode.INVALID_INPUT);
         var result = threads.findPage(projectId, status, PageRequest.of(page, size, Sort.by("id").descending()));
-        result.forEach(this::verifySection);
-        return new QuestionPage(result.map(this::question).getContent(), page, size,
+        return new QuestionPage(result.map(thread -> question(thread, verifySection(thread))).getContent(), page, size,
                 result.getTotalElements(), result.getTotalPages());
     }
 
@@ -65,8 +74,11 @@ public class QaService {
         requireAccess(userId, projectId);
         QaThread thread = threads.findByIdAndProjectId(threadId, projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        verifySection(thread);
-        return new Detail(question(thread), replies.findByThread_IdOrderByIdAsc(threadId).stream().map(this::reply).toList());
+        SectionReference section = verifySection(thread);
+        return new Detail(question(thread, section),
+                replies.findByThread_IdOrderByIdAsc(threadId).stream().map(this::reply).toList(),
+                attachments.listMetadata(threadId).stream()
+                        .map(file -> QaAttachmentService.metadata(projectId, threadId, file)).toList());
     }
 
     @Transactional
@@ -101,10 +113,12 @@ public class QaService {
         return section;
     }
 
-    private void verifySection(QaThread thread) {
-        if (!Objects.equals(thread.getVersionId(), section(thread.getProjectId(), thread.getSectionId()).versionId())) {
+    private SectionReference verifySection(QaThread thread) {
+        SectionReference reference = section(thread.getProjectId(), thread.getSectionId());
+        if (!Objects.equals(thread.getVersionId(), reference.versionId())) {
             fail(ErrorCode.RESOURCE_NOT_FOUND);
         }
+        return reference;
     }
 
     private void requireAccess(Long userId, Long projectId) {
@@ -119,10 +133,11 @@ public class QaService {
         if (!allowed) fail(ErrorCode.FORBIDDEN);
     }
 
-    private Question question(QaThread thread) {
+    private Question question(QaThread thread, SectionReference section) {
         return new Question(thread.getId(), thread.getProjectId(), thread.getVersionId(), thread.getSectionId(),
                 thread.getAuthorId(), thread.getContent(), thread.getStatus(), thread.getRevision(),
-                thread.getReplyCount(), thread.getCreatedAt(), thread.getUpdatedAt());
+                thread.getReplyCount(), thread.getCreatedAt(), thread.getUpdatedAt(), section.title(),
+                section.displayOrder());
     }
 
     private Reply reply(QaReply reply) {

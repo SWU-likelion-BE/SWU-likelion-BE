@@ -20,7 +20,9 @@ public record HandoverDetailResponse(
         int completeness,
         Long resourceVersion,
         OffsetDateTime createdAt,
-        OffsetDateTime completedAt
+        OffsetDateTime completedAt,
+        String organizationName,
+        String affiliationName
 ) {
     public record ParticipantResponse(
             String memberId,

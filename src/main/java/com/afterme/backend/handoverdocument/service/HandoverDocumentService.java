@@ -8,6 +8,7 @@ import com.afterme.backend.handoverdocument.domain.HandoverDocument;
 import com.afterme.backend.handoverdocument.dto.DraftResponse;
 import com.afterme.backend.handoverdocument.dto.DraftSectionInput;
 import com.afterme.backend.handoverdocument.dto.UpdateDraftRequest;
+import com.afterme.backend.handoverdocument.dto.PublicationResponse;
 import com.afterme.backend.handoverdocument.repository.DocumentVersionRepository;
 import com.afterme.backend.handoverdocument.repository.HandoverDocumentRepository;
 import com.afterme.backend.handovertask.domain.HandoverTask;
@@ -129,6 +130,26 @@ public class HandoverDocumentService {
         version.recordEdit(request.title(), clock.instant().truncatedTo(ChronoUnit.MICROS));
         versions.flush();
         return toResponse(version);
+    }
+
+    @Transactional
+    public PublicationResponse publish(Long userId, Long projectId, Long documentId, Long versionId,
+                                       long expectedVersion) {
+        access.role(userId, projectId, PREDECESSOR);
+        access.mutable(access.lock(projectId));
+        DocumentVersion version = versions.findByIdAndDocument_Id(versionId, documentId)
+                .filter(candidate -> tasks.existsByIdAndProjectId(candidate.getDocument().getTaskId(), projectId))
+                .orElseThrow(() -> error(RESOURCE_NOT_FOUND));
+        if (version.getStatus() == DocumentVersion.Status.PUBLISHED
+                && version.getPublishedAt() != null && version.getRevision() - 1 == expectedVersion) {
+            return new PublicationResponse(documentId, versionId, version.getPublishedAt(), version.getRevision());
+        }
+        if (version.getStatus() != DocumentVersion.Status.DRAFT || version.getRevision() != expectedVersion
+                || version.getSections().isEmpty()) {
+            throw error(CONFLICT);
+        }
+        version.publish(clock.instant().truncatedTo(ChronoUnit.MICROS));
+        return new PublicationResponse(documentId, versionId, version.getPublishedAt(), version.getRevision());
     }
 
     private DocumentVersion requireDraft(Long projectId, Long taskId, Long versionId) {

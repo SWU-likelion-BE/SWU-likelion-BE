@@ -10,6 +10,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/handovers/{projectId}/questions")
 @RequiredArgsConstructor
@@ -34,6 +36,11 @@ public class QaController {
                                           @RequestParam(defaultValue = "0") int page,
                                           @RequestParam(defaultValue = "20") int size) {
         return ApiResponse.of(service.list(userId, projectId, status, page, size));
+    }
+
+    @GetMapping("/sections")
+    public ApiResponse<List<SectionOption>> listSections(@LoginUserId Long userId, @PathVariable Long projectId) {
+        return ApiResponse.of(service.listSections(userId, projectId));
     }
 
     @GetMapping("/{threadId}")

@@ -31,10 +31,11 @@ class QaServiceTest {
     @Mock QaReplyRepository replies;
     @Mock QaOutboxEventRepository events;
     @Mock PublishedSectionReader sections;
+    @Mock QaAttachmentRepository attachments;
     QaService service;
 
     @BeforeEach void setup() {
-        service = new QaService(projects, participants, threads, replies, events, sections, Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new QaService(projects, participants, threads, replies, events, sections, attachments, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     void access() {

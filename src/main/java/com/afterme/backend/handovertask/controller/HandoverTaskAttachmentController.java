@@ -11,6 +11,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -42,6 +43,13 @@ public class HandoverTaskAttachmentController {
     public ApiResponse<List<HandoverTaskAttachmentResponse>> list(
             @LoginUserId Long userId, @PathVariable Long projectId, @PathVariable Long taskId) {
         return ApiResponse.of(service.list(userId, projectId, taskId));
+    }
+
+    @DeleteMapping("/{attachmentId}")
+    public ResponseEntity<Void> delete(@LoginUserId Long userId, @PathVariable Long projectId,
+                                       @PathVariable Long taskId, @PathVariable Long attachmentId) {
+        service.delete(userId, projectId, taskId, attachmentId);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{attachmentId}")

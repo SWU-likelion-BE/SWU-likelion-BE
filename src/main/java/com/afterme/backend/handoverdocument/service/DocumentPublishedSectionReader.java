@@ -30,6 +30,6 @@ public class DocumentPublishedSectionReader implements PublishedSectionReader {
 
     private static SectionReference reference(PublishedSection section) {
         return new SectionReference(section.getProjectId(), section.getVersionId(), section.getSectionId(),
-                section.getTaskId(), section.getTitle(), section.getDisplayOrder());
+                section.getTaskId(), section.getTitle(), section.getDisplayOrder(), section.getContent());
     }
 }

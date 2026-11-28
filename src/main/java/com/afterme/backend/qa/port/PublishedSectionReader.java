@@ -11,9 +11,9 @@ public interface PublishedSectionReader {
     }
 
     record SectionReference(Long projectId, Long versionId, Long sectionId, Long taskId,
-                            String title, Integer displayOrder) {
+                            String title, Integer displayOrder, String content) {
         public SectionReference(Long projectId, Long versionId, Long sectionId) {
-            this(projectId, versionId, sectionId, null, null, null);
+            this(projectId, versionId, sectionId, null, null, null, null);
         }
     }
 }

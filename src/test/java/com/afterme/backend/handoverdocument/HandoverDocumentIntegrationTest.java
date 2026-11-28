@@ -149,6 +149,7 @@ class HandoverDocumentIntegrationTest {
         var detail = qa.detail(predecessor, project, question.threadId());
         assertThat(detail.question().versionId()).isEqualTo(firstVersion);
         assertThat(detail.question().sectionDisplayOrder()).isEqualTo(2);
+        assertThat(detail.sectionContent()).isEqualTo("Two");
         assertThat(detail.attachments()).containsExactly(attachment);
         assertThat(attachments.download(predecessor, project, question.threadId(), attachment.attachmentId())
                 .getContent()).isEqualTo(bytes);

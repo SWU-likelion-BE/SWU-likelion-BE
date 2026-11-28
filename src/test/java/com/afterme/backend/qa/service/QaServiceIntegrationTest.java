@@ -46,6 +46,8 @@ class QaServiceIntegrationTest {
         });
 
         Question created = service.create(successor, project, new CreateQuestion(456L, "Original question", " Original title "));
+        assertThat(created.authorName()).isEqualTo("Successor");
+        assertThat(created.authorRole().name()).isEqualTo("SUCCESSOR");
         Long threadId = created.threadId();
         em.flush();
         em.clear();
@@ -71,6 +73,8 @@ class QaServiceIntegrationTest {
         assertThat(service.detail(predecessor, project, threadId).question().title()).isEqualTo("New title");
         assertThat(detail.replies()).singleElement().satisfies(r -> {
             assertThat(r.replyId()).isEqualTo(reply.replyId());
+            assertThat(r.authorName()).isEqualTo("Predecessor");
+            assertThat(r.authorRole().name()).isEqualTo("PREDECESSOR");
             assertThat(r.questionContent()).isEqualTo("Original question");
             assertThat(r.questionRevision()).isEqualTo(1);
         });

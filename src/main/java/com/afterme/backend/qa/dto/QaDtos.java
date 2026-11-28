@@ -1,5 +1,6 @@
 package com.afterme.backend.qa.dto;
 
+import com.afterme.backend.handover.domain.ParticipantRole;
 import com.afterme.backend.qa.domain.QaStatus;
 import jakarta.validation.constraints.*;
 import java.time.Instant;
@@ -26,19 +27,25 @@ public final class QaDtos {
     public record Question(Long threadId, Long projectId, Long versionId, Long sectionId, Long authorId,
                            String content, QaStatus status, int revision, int replyCount,
                            Instant createdAt, Instant updatedAt, String sectionTitle, Integer sectionDisplayOrder,
-                           String title) {
+                           String title, String authorName, ParticipantRole authorRole) {
         public Question(Long threadId, Long projectId, Long versionId, Long sectionId, Long authorId,
                         String content, QaStatus status, int revision, int replyCount,
                         Instant createdAt, Instant updatedAt) {
             this(threadId, projectId, versionId, sectionId, authorId, content, status, revision, replyCount,
-                    createdAt, updatedAt, null, null, null);
+                    createdAt, updatedAt, null, null, null, null, ParticipantRole.SUCCESSOR);
         }
     }
     public record Reply(Long replyId, Long authorId, String content, int questionRevision,
-                        String questionContent, Instant createdAt) {}
-    public record Detail(Question question, List<Reply> replies, List<Attachment> attachments) {
+                        String questionContent, Instant createdAt, String authorName, ParticipantRole authorRole) {
+        public Reply(Long replyId, Long authorId, String content, int questionRevision,
+                     String questionContent, Instant createdAt) {
+            this(replyId, authorId, content, questionRevision, questionContent, createdAt, null,
+                    ParticipantRole.PREDECESSOR);
+        }
+    }
+    public record Detail(Question question, List<Reply> replies, List<Attachment> attachments, String sectionContent) {
         public Detail(Question question, List<Reply> replies) {
-            this(question, replies, List.of());
+            this(question, replies, List.of(), null);
         }
     }
     public record SectionOption(Long sectionId, Long versionId, Long taskId, String title, Integer displayOrder) {}

@@ -43,6 +43,9 @@ Spring Boot 기반 AfterMe 백엔드 프로젝트입니다.
 인수인계 생성 요청은 선택 필드 `organizationName`, `affiliationName`을 받습니다. 두 값은 프로젝트에 저장되어
 생성 및 상세 응답에 포함됩니다. 값이 없는 기존 프로젝트는 `roleName`으로 표시할 수 있습니다.
 
+업무 첨부는 `DELETE /api/handovers/{projectId}/tasks/{taskId}/attachments/{attachmentId}`로 삭제합니다.
+활성 전임자만 호출할 수 있고, 성공 시 `204 No Content`를 반환합니다.
+
 ## Q&A 구현 현황
 
 | 기능 | 경로 | 권한 | 성공 |
@@ -62,7 +65,7 @@ Spring Boot 기반 AfterMe 백엔드 프로젝트입니다.
 제목은 선택 문자열이며 입력 시 공백만 보낼 수 없고 최대 255자입니다. 수정 시 제목을 생략하거나 `null`을 보내면 기존 제목을 유지합니다. 제목이 없는 질문은 응답의 `title`이 `null`입니다.
 내용은 필수이며 최대 10,000자입니다. 목록은 `status=OPEN|RESOLVED`, `page`(0부터), `size`(기본 20, 최대 100)를 받습니다.
 상세는 `{data:{question:{...},replies:[...],attachments:[...]}}`, 목록은 `{data:{items:[...],page,size,totalElements,totalPages}}`입니다.
-질문 응답에 `sectionTitle`, `sectionDisplayOrder`가 포함됩니다. 섹션 목록은 문서별 최신 공개 버전의
+질문 응답에 `sectionTitle`, `sectionDisplayOrder`가 포함됩니다. 질문과 답변에는 작성자의 `authorName`, `authorRole`이 포함되며, 상세의 `sectionContent`는 질문이 참조하는 공개 버전의 섹션 원문입니다. 섹션 목록은 문서별 최신 공개 버전의
 `sectionId`, `versionId`, `taskId`, `title`, `displayOrder`를 반환하며 표시 순서는 문서마다 1부터 시작합니다.
 첨부는 질문 등록 후 `multipart/form-data`의 `file` 파트로 한 건씩 업로드합니다.
 PDF·PNG·JPEG·GIF를 파일당 최대 10 MiB까지 지원하며, 상세의 `downloadUrl`에는 인증 헤더를 포함해 요청합니다.

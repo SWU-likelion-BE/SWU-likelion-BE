@@ -66,6 +66,16 @@ public class HandoverTaskAttachmentService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
     }
 
+    @Transactional
+    public void delete(Long userId, Long projectId, Long taskId, Long attachmentId) {
+        access.role(userId, projectId, PREDECESSOR);
+        access.mutable(access.lock(projectId));
+        requireTask(projectId, taskId);
+        if (attachments.deleteFromTask(attachmentId, taskId) == 0) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+    }
+
     private void requireTask(Long projectId, Long taskId) {
         if (!tasks.existsByIdAndProjectId(taskId, projectId)) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);

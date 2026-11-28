@@ -21,7 +21,9 @@ public record HandoverProjectResponse(
         int completeness,
         long resourceVersion,
         OffsetDateTime createdAt,
-        OffsetDateTime completedAt
+        OffsetDateTime completedAt,
+        String organizationName,
+        String affiliationName
 
 ) {
 

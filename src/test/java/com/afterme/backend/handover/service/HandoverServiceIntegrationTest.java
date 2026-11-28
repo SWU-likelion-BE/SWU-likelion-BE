@@ -108,13 +108,18 @@ class HandoverServiceIntegrationTest {
 
     @Test
     void returnsProjectDetailsOnlyToAuthorizedUsers() {
-        var created = service.create(userId, request(1, List.of(memberId.toString())));
+        var created = service.create(userId, new CreateHandoverRequest(organizationId.toString(), "Test handover",
+                "Test role", today.plusDays(1), List.of(memberId.toString()), "LINKER", "26기 홍보팀"));
+        assertThat(created.organizationName()).isEqualTo("LINKER");
+        assertThat(created.affiliationName()).isEqualTo("26기 홍보팀");
         Long projectId = Long.valueOf(created.id());
 
         var response = service.findDetail(userId, projectId);
 
         assertThat(response.id()).isEqualTo(created.id());
         assertThat(response.deadline()).isEqualTo(created.deadline());
+        assertThat(response.organizationName()).isEqualTo(created.organizationName());
+        assertThat(response.affiliationName()).isEqualTo(created.affiliationName());
         assertThat(response.myRoles()).containsExactly(ParticipantRole.PREDECESSOR);
         assertThat(response.participants()).singleElement()
                 .satisfies(participant -> assertThat(participant.memberId()).isEqualTo(memberId.toString()));

@@ -25,6 +25,12 @@ public class HandoverProject {
     String roleName;
 
     @Column
+    private String organizationName;
+
+    @Column
+    private String affiliationName;
+
+    @Column
     LocalDate deadLine;
 
     @Column
@@ -67,7 +73,14 @@ public class HandoverProject {
 
     public HandoverProject(Organization organizationId, String title,
                            String roleName, LocalDate deadline){
+        this(organizationId, title, roleName, deadline, null, null);
+    }
+
+    public HandoverProject(Organization organizationId, String title, String roleName, LocalDate deadline,
+                           String organizationName, String affiliationName) {
         this.organizationId = organizationId;
+        this.organizationName = displayName(organizationName);
+        this.affiliationName = displayName(affiliationName);
         this.title = title;
         this.roleName = roleName;
         this.deadLine = deadline;
@@ -94,6 +107,14 @@ public class HandoverProject {
     public String getRoleName(){
         return roleName;
     }
+
+    private static String displayName(String value) {
+        return value == null || value.isBlank() ? null : value.strip();
+    }
+
+    public String getOrganizationName() { return organizationName; }
+
+    public String getAffiliationName() { return affiliationName; }
 
     public LocalDate getDeadLine(){
         return deadLine;

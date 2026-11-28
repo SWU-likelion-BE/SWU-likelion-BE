@@ -84,7 +84,9 @@ public class HandoverService {
                 organization,
                 request.title(),
                 request.roleName(),
-                request.deadline()
+                request.deadline(),
+                request.organizationName(),
+                request.affiliationName()
         );
 
         HandoverProject handoverProject = handoverProjectRepository.save(newProject);
@@ -129,7 +131,9 @@ public class HandoverService {
                 handoverProject.getCompleteness(),
                 handoverProject.getResourceVersion(),
                 handoverProject.getCreatedAt(),
-                handoverProject.getCompletedAt()
+                handoverProject.getCompletedAt(),
+                handoverProject.getOrganizationName(),
+                handoverProject.getAffiliationName()
         );
     }
 
@@ -228,7 +232,9 @@ public class HandoverService {
                 project.getCompleteness(),
                 project.getResourceVersion(),
                 project.getCreatedAt(),
-                project.getCompletedAt()
+                project.getCompletedAt(),
+                project.getOrganizationName(),
+                project.getAffiliationName()
         );
     }
 

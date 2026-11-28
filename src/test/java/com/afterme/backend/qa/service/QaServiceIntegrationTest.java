@@ -45,11 +45,14 @@ class QaServiceIntegrationTest {
             return new SectionReference(project, 123L, sectionId);
         });
 
-        Question created = service.create(successor, project, new CreateQuestion(456L, "Original question"));
+        Question created = service.create(successor, project, new CreateQuestion(456L, "Original question", " Original title "));
+        assertThat(created.authorName()).isEqualTo("Successor");
+        assertThat(created.authorRole().name()).isEqualTo("SUCCESSOR");
         Long threadId = created.threadId();
         em.flush();
         em.clear();
-        assertThat(service.list(successor, project, QaStatus.OPEN, 0, 20).totalElements()).isEqualTo(1);
+        assertThat(service.list(successor, project, QaStatus.OPEN, 0, 20).items())
+                .singleElement().satisfies(question -> assertThat(question.title()).isEqualTo("Original title"));
         Reply reply = service.reply(predecessor, project, threadId, new CreateReply(1, "Answer"));
         em.flush();
         em.clear();
@@ -62,8 +65,16 @@ class QaServiceIntegrationTest {
         Detail detail = service.detail(predecessor, project, threadId);
         assertThat(detail.question().status()).isEqualTo(QaStatus.RESOLVED);
         assertThat(detail.question().revision()).isEqualTo(2);
+        assertThat(detail.question().title()).isEqualTo("Original title");
+        var renamed = service.edit(successor, project, threadId, new EditQuestion(2, "Changed question", "New title"));
+        assertThat(renamed.revision()).isEqualTo(3);
+        em.flush();
+        em.clear();
+        assertThat(service.detail(predecessor, project, threadId).question().title()).isEqualTo("New title");
         assertThat(detail.replies()).singleElement().satisfies(r -> {
             assertThat(r.replyId()).isEqualTo(reply.replyId());
+            assertThat(r.authorName()).isEqualTo("Predecessor");
+            assertThat(r.authorRole().name()).isEqualTo("PREDECESSOR");
             assertThat(r.questionContent()).isEqualTo("Original question");
             assertThat(r.questionRevision()).isEqualTo(1);
         });

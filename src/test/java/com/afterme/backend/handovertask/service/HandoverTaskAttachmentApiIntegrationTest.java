@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -79,6 +80,15 @@ class HandoverTaskAttachmentApiIntegrationTest {
         mvc.perform(get(base + secondTask + "/attachments/" + attachmentId)
                         .header(HttpHeaders.AUTHORIZATION, token(successor)))
                 .andExpect(status().isNotFound());
+        mvc.perform(delete(path + "/" + attachmentId).header(HttpHeaders.AUTHORIZATION, token(successor)))
+                .andExpect(status().isForbidden());
+        mvc.perform(delete(base + secondTask + "/attachments/" + attachmentId)
+                        .header(HttpHeaders.AUTHORIZATION, token(predecessor)))
+                .andExpect(status().isNotFound());
+        mvc.perform(delete(path + "/" + attachmentId).header(HttpHeaders.AUTHORIZATION, token(predecessor)))
+                .andExpect(status().isNoContent());
+        mvc.perform(get(path).header(HttpHeaders.AUTHORIZATION, token(successor)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(0));
     }
 
     private Long user() {

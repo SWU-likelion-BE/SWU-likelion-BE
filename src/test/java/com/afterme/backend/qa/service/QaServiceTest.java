@@ -10,6 +10,7 @@ import com.afterme.backend.qa.port.PublishedSectionReader;
 import com.afterme.backend.qa.port.PublishedSectionReader.SectionReference;
 import com.afterme.backend.qa.repository.*;
 import com.afterme.backend.user.domain.User;
+import com.afterme.backend.user.repository.UserRepository;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -31,10 +32,12 @@ class QaServiceTest {
     @Mock QaReplyRepository replies;
     @Mock QaOutboxEventRepository events;
     @Mock PublishedSectionReader sections;
+    @Mock QaAttachmentRepository attachments;
+    @Mock UserRepository users;
     QaService service;
 
     @BeforeEach void setup() {
-        service = new QaService(projects, participants, threads, replies, events, sections, Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new QaService(projects, participants, threads, replies, events, sections, attachments, users, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     void access() {

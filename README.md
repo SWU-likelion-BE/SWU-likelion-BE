@@ -40,20 +40,35 @@ Spring Boot 기반 AfterMe 백엔드 프로젝트입니다.
 2026-11-25 검증: PostgreSQL 15의 격리 DB에서 V1~V6 적용 및 전체 51개 테스트 통과(퀴즈 12개 포함).
 프로젝트 권장 PostgreSQL 17 환경에서의 확인은 남아 있습니다.
 
+인수인계 생성 요청은 선택 필드 `organizationName`, `affiliationName`을 받습니다. 두 값은 프로젝트에 저장되어
+생성 및 상세 응답에 포함됩니다. 값이 없는 기존 프로젝트는 `roleName`으로 표시할 수 있습니다.
+
+업무 첨부는 `DELETE /api/handovers/{projectId}/tasks/{taskId}/attachments/{attachmentId}`로 삭제합니다.
+활성 전임자만 호출할 수 있고, 성공 시 `204 No Content`를 반환합니다.
+
 ## Q&A 구현 현황
 
 | 기능 | 경로 | 권한 | 성공 |
 |---|---|---|---|
+| 질문 가능 섹션 | `GET /api/handovers/{projectId}/questions/sections` | 프로젝트 접근 권한 | 200 |
 | 질문 등록 | `POST /api/handovers/{projectId}/questions` | 활성 후임자 | 201 |
 | 질문 수정 | `PATCH /api/handovers/{projectId}/questions/{threadId}` | 작성자 본인인 활성 후임자 | 200 |
 | 질문 목록 | `GET /api/handovers/{projectId}/questions` | 프로젝트 접근 권한 | 200 |
 | 질문·답변 상세 | `GET /api/handovers/{projectId}/questions/{threadId}` | 프로젝트 접근 권한 | 200 |
 | 답변 등록 | `POST /api/handovers/{projectId}/questions/{threadId}/replies` | 활성 전임자 | 201 |
+| 질문 첨부 업로드 | `POST /api/handovers/{projectId}/questions/{threadId}/attachments` | 질문 작성자 본인인 활성 후임자 | 201 |
+| 질문 첨부 다운로드 | `GET /api/handovers/{projectId}/questions/{threadId}/attachments/{attachmentId}` | 프로젝트 접근 권한 | 200 |
+| 질문 첨부 삭제 | `DELETE /api/handovers/{projectId}/questions/{threadId}/attachments/{attachmentId}` | 질문 작성자 본인인 활성 후임자 | 204 |
 
-등록 본문은 `{"sectionId":4,"content":"질문 내용"}`, 수정은 `{"revision":1,"content":"수정 내용"}`,
+등록 본문은 `{"sectionId":4,"title":"질문 제목","content":"질문 내용"}`, 수정은 `{"revision":1,"title":"수정 제목","content":"수정 내용"}`,
 답변은 `{"questionRevision":1,"content":"답변 내용"}`입니다. 작성자 id는 JWT에서 결정합니다.
+제목은 선택 문자열이며 입력 시 공백만 보낼 수 없고 최대 255자입니다. 수정 시 제목을 생략하거나 `null`을 보내면 기존 제목을 유지합니다. 제목이 없는 질문은 응답의 `title`이 `null`입니다.
 내용은 필수이며 최대 10,000자입니다. 목록은 `status=OPEN|RESOLVED`, `page`(0부터), `size`(기본 20, 최대 100)를 받습니다.
-상세는 `{data:{question:{...},replies:[...]}}`, 목록은 `{data:{items:[...],page,size,totalElements,totalPages}}`입니다.
+상세는 `{data:{question:{...},replies:[...],attachments:[...]}}`, 목록은 `{data:{items:[...],page,size,totalElements,totalPages}}`입니다.
+질문 응답에 `sectionTitle`, `sectionDisplayOrder`가 포함됩니다. 질문과 답변에는 작성자의 `authorName`, `authorRole`이 포함되며, 상세의 `sectionContent`는 질문이 참조하는 공개 버전의 섹션 원문입니다. 섹션 목록은 문서별 최신 공개 버전의
+`sectionId`, `versionId`, `taskId`, `title`, `displayOrder`를 반환하며 표시 순서는 문서마다 1부터 시작합니다.
+첨부는 질문 등록 후 `multipart/form-data`의 `file` 파트로 한 건씩 업로드합니다.
+PDF·PNG·JPEG·GIF를 파일당 최대 10 MiB까지 지원하며, 상세의 `downloadUrl`에는 인증 헤더를 포함해 요청합니다.
 
 답변 등록 시 명세에 따라 자동으로 `RESOLVED`가 됩니다. 질문 내용을 변경하면 revision이 증가하며, 기존 해결 상태는 유지합니다.
 기존 답변에는 답변 당시 질문 내용과 revision이 보존됩니다. 오래된 revision으로 수정·답변하면 409를 반환합니다.
@@ -62,16 +77,15 @@ Spring Boot 기반 AfterMe 백엔드 프로젝트입니다.
 
 ### 문서·알림 연동 상태
 
-- **문서 연동 전에는 질문 등록·수정·답변·기존 질문 조회를 실제 서비스에서 사용할 수 없습니다.** 빈 목록은 조회 가능합니다.
-- 문서 담당 모듈에서 `PublishedSectionReader` Bean을 제공해야 합니다. 프로젝트 소속과 공개 버전 접근 가능 여부를 검증한 뒤
-  `SectionReference(projectId, versionId, sectionId)`를 반환하고, 없거나 열람할 수 없는 항목은 404로 처리해야 합니다.
-- 기본 구현은 연동 누락 시 409로 차단합니다. 존재하지 않는 문서 id를 그대로 받아 저장하거나 공개 검증을 생략하지 않습니다.
-- 문서 테이블 추가 후 `qa_thread.version_id`, `section_id` 외래키도 연결해야 합니다.
+- 활성 전임자는 `POST /api/handovers/{projectId}/documents/{documentId}/versions/{versionId}/publication`에
+  초안의 `revision`을 `expectedVersion`으로 보내 문서를 공개할 수 있습니다.
+- Q&A는 요청 프로젝트에 속한 공개 섹션만 허용하며, 초안이나 다른 프로젝트의 섹션은 404로 처리합니다.
+  기존 질문은 새 버전 공개 이후에도 등록 당시의 공개 섹션을 참조합니다.
 - 질문·답변 저장과 같은 트랜잭션에서 `qa_outbox_event`에 `QUESTION_CREATED` / `ANSWER_CREATED` 이벤트를 저장합니다.
   이벤트에는 고유 `dedupe_key`가 있습니다. **알림 발송 워커·알림센터 연결은 미구현**입니다.
 - 알림 담당 모듈은 미처리 이벤트를 소비하고, 질문 등록은 전임자에게, 답변 등록은 질문 작성자에게 전달해야 합니다.
   알림 저장 시 `dedupe_key`로 중복을 막고 `processed_at`을 기록하는 처리가 필요합니다.
-- Q&A PostgreSQL 통합 테스트에서는 문서 어댑터만 mock으로 대체하며, 실제 문서 모듈 연동을 검증하는 테스트는 아닙니다.
+- 문서 통합 테스트에서 실제 공개 섹션으로 질문을 등록하고 첨부를 조회·다운로드·삭제하는 흐름을 검증합니다.
 
 2026-11-25 검증: 격리된 PostgreSQL 15에서 V7 적용과 JPA 스키마 검증을 완료하고 전체 71개 테스트가 통과했습니다.
 Q&A 테스트 20개에는 역할·작성자 권한, 공개 항목 검증 경계, 수정 버전 충돌, HTTP 인증·입력 검증,

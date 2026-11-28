@@ -37,7 +37,7 @@ public class QaService {
         SectionReference section = section(projectId, request.sectionId());
         var now = clock.instant();
         QaThread thread = threads.save(QaThread.create(projectId, section.versionId(), section.sectionId(),
-                userId, request.content(), now));
+                userId, request.content(), request.title(), now));
         events.save(QaOutboxEvent.questionCreated(thread, now));
         return question(thread, section);
     }
@@ -50,7 +50,7 @@ public class QaService {
         if (!thread.getAuthorId().equals(userId)) fail(ErrorCode.FORBIDDEN);
         SectionReference section = verifySection(thread);
         if (!Objects.equals(request.revision(), thread.getRevision())) fail(ErrorCode.CONFLICT);
-        thread.edit(request.content(), clock.instant());
+        thread.edit(request.content(), request.title(), clock.instant());
         return question(thread, section);
     }
 
@@ -137,7 +137,7 @@ public class QaService {
         return new Question(thread.getId(), thread.getProjectId(), thread.getVersionId(), thread.getSectionId(),
                 thread.getAuthorId(), thread.getContent(), thread.getStatus(), thread.getRevision(),
                 thread.getReplyCount(), thread.getCreatedAt(), thread.getUpdatedAt(), section.title(),
-                section.displayOrder());
+                section.displayOrder(), thread.getTitle());
     }
 
     private Reply reply(QaReply reply) {

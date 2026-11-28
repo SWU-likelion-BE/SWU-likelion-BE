@@ -1,8 +1,11 @@
 package com.afterme.backend.qa.domain;
 
+import com.afterme.backend.global.exception.BusinessException;
+import com.afterme.backend.global.exception.ErrorCode;
 import jakarta.persistence.*;
 import lombok.Getter;
 import java.time.Instant;
+import java.util.Objects;
 
 @Entity
 @Table(name = "qa_thread")
@@ -14,6 +17,7 @@ public class QaThread {
     @Column(nullable = false) private Long versionId;
     @Column(nullable = false) private Long sectionId;
     @Column(nullable = false) private Long authorId;
+    @Column private String title;
     @Column(nullable = false, columnDefinition = "text") private String content;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20) private QaStatus status;
@@ -26,12 +30,18 @@ public class QaThread {
 
     public static QaThread create(Long projectId, Long versionId, Long sectionId, Long authorId,
                                   String content, Instant now) {
+        return create(projectId, versionId, sectionId, authorId, content, null, now);
+    }
+
+    public static QaThread create(Long projectId, Long versionId, Long sectionId, Long authorId,
+                                  String content, String title, Instant now) {
         QaThread thread = new QaThread();
         thread.projectId = projectId;
         thread.versionId = versionId;
         thread.sectionId = sectionId;
         thread.authorId = authorId;
         thread.content = validatedContent(content);
+        thread.title = validatedTitle(title);
         thread.status = QaStatus.OPEN;
         thread.revision = 1;
         thread.createdAt = now;
@@ -40,9 +50,15 @@ public class QaThread {
     }
 
     public void edit(String content, Instant now) {
+        edit(content, null, now);
+    }
+
+    public void edit(String content, String title, Instant now) {
         String validated = validatedContent(content);
-        if (this.content.equals(validated)) return;
+        String nextTitle = title == null ? this.title : validatedTitle(title);
+        if (this.content.equals(validated) && Objects.equals(this.title, nextTitle)) return;
         this.content = validated;
+        this.title = nextTitle;
         this.revision++;
         this.updatedAt = now;
     }
@@ -53,10 +69,17 @@ public class QaThread {
         this.updatedAt = now;
     }
 
+    private static String validatedTitle(String title) {
+        if (title == null) return null;
+        if (title.isBlank() || title.length() > 255) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        return title.strip();
+    }
+
     static String validatedContent(String content) {
         if (content == null || content.isBlank() || content.length() > 10000) {
-            throw new com.afterme.backend.global.exception.BusinessException(
-                    com.afterme.backend.global.exception.ErrorCode.INVALID_INPUT);
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
         return content.strip();
     }

@@ -57,8 +57,9 @@ Spring Boot 기반 AfterMe 백엔드 프로젝트입니다.
 | 질문 첨부 다운로드 | `GET /api/handovers/{projectId}/questions/{threadId}/attachments/{attachmentId}` | 프로젝트 접근 권한 | 200 |
 | 질문 첨부 삭제 | `DELETE /api/handovers/{projectId}/questions/{threadId}/attachments/{attachmentId}` | 질문 작성자 본인인 활성 후임자 | 204 |
 
-등록 본문은 `{"sectionId":4,"content":"질문 내용"}`, 수정은 `{"revision":1,"content":"수정 내용"}`,
+등록 본문은 `{"sectionId":4,"title":"질문 제목","content":"질문 내용"}`, 수정은 `{"revision":1,"title":"수정 제목","content":"수정 내용"}`,
 답변은 `{"questionRevision":1,"content":"답변 내용"}`입니다. 작성자 id는 JWT에서 결정합니다.
+제목은 선택 문자열이며 입력 시 공백만 보낼 수 없고 최대 255자입니다. 수정 시 제목을 생략하거나 `null`을 보내면 기존 제목을 유지합니다. 제목이 없는 질문은 응답의 `title`이 `null`입니다.
 내용은 필수이며 최대 10,000자입니다. 목록은 `status=OPEN|RESOLVED`, `page`(0부터), `size`(기본 20, 최대 100)를 받습니다.
 상세는 `{data:{question:{...},replies:[...],attachments:[...]}}`, 목록은 `{data:{items:[...],page,size,totalElements,totalPages}}`입니다.
 질문 응답에 `sectionTitle`, `sectionDisplayOrder`가 포함됩니다. 섹션 목록은 문서별 최신 공개 버전의

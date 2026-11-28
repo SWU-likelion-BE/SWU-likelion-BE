@@ -8,19 +8,30 @@ import java.util.List;
 public final class QaDtos {
     private QaDtos() {}
     public record CreateQuestion(@NotNull @Positive Long sectionId,
-                                 @NotBlank @Size(max = 10000) String content) {}
+                                 @NotBlank @Size(max = 10000) String content,
+                                 @Size(max = 255) String title) {
+        public CreateQuestion(Long sectionId, String content) {
+            this(sectionId, content, null);
+        }
+    }
     public record EditQuestion(@NotNull @Min(1) Integer revision,
-                               @NotBlank @Size(max = 10000) String content) {}
+                               @NotBlank @Size(max = 10000) String content,
+                               @Size(max = 255) String title) {
+        public EditQuestion(Integer revision, String content) {
+            this(revision, content, null);
+        }
+    }
     public record CreateReply(@NotNull @Min(1) Integer questionRevision,
                               @NotBlank @Size(max = 10000) String content) {}
     public record Question(Long threadId, Long projectId, Long versionId, Long sectionId, Long authorId,
                            String content, QaStatus status, int revision, int replyCount,
-                           Instant createdAt, Instant updatedAt, String sectionTitle, Integer sectionDisplayOrder) {
+                           Instant createdAt, Instant updatedAt, String sectionTitle, Integer sectionDisplayOrder,
+                           String title) {
         public Question(Long threadId, Long projectId, Long versionId, Long sectionId, Long authorId,
                         String content, QaStatus status, int revision, int replyCount,
                         Instant createdAt, Instant updatedAt) {
             this(threadId, projectId, versionId, sectionId, authorId, content, status, revision, replyCount,
-                    createdAt, updatedAt, null, null);
+                    createdAt, updatedAt, null, null, null);
         }
     }
     public record Reply(Long replyId, Long authorId, String content, int questionRevision,
